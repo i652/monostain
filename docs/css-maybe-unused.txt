@@ -1,0 +1,6 @@
+# Ранее сюда попадали классы из style.css без вхождений в templates / JS / src.
+# 2026-04-17: удалены правила для .hero, .inline-input, .inline-textarea,
+#   .js-auth-register, .js-password-toggle, .panel-list-item-row,
+#   input[type="checkbox"].toggle-input (селектор очищен, #panel-toggle / #auth-toggle сохранены).
+# Подстрока «googleapis» в старом аудите была из URL @import — не CSS-класс.
+# При следующем аудите перегенерируйте список командами из docs/CSS_AUDIT.md.
