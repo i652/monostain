@@ -62,7 +62,29 @@ final class UserRepository
 
     public function listAll(): array
     {
-        $stmt = $this->pdo->query('SELECT id, email, nickname, role, created_at FROM users ORDER BY created_at DESC');
+        $stmt = $this->pdo->query(
+            'SELECT
+                u.id,
+                u.email,
+                u.nickname,
+                u.role,
+                u.created_at,
+                COALESCE(total_games.total_count, 0) AS games_total,
+                COALESCE(today_games.today_count, 0) AS games_today
+             FROM users u
+             LEFT JOIN (
+               SELECT created_by, COUNT(*)::int AS total_count
+               FROM games
+               GROUP BY created_by
+             ) total_games ON total_games.created_by = u.id
+             LEFT JOIN (
+               SELECT created_by, COUNT(*)::int AS today_count
+               FROM games
+               WHERE created_at::date = CURRENT_DATE
+               GROUP BY created_by
+             ) today_games ON today_games.created_by = u.id
+             ORDER BY u.created_at DESC'
+        );
         return $stmt->fetchAll() ?: [];
     }
 
@@ -70,6 +92,16 @@ final class UserRepository
     {
         $stmt = $this->pdo->prepare('UPDATE users SET role = :role WHERE id = :id');
         $stmt->execute(['role' => $role, 'id' => $id]);
+    }
+
+    public function updateIdentity(int $id, string $email, string $nickname): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET email = :email, nickname = :nickname WHERE id = :id');
+        $stmt->execute([
+            'id' => $id,
+            'email' => strtolower(trim($email)),
+            'nickname' => trim($nickname),
+        ]);
     }
 
     public function updatePasswordHash(int $id, string $passwordHash): void

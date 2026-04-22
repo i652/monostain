@@ -24,6 +24,32 @@ trait AppRouteRegistration
         $r->map('GET', '#^/auth$#', function (): void {
             $this->renderAuth();
         });
+        $r->map('GET', '#^/profile$#', function (): void {
+            $this->renderProfile();
+        });
+        $r->map('POST', '#^/profile$#', function (): void {
+            $this->handleProfileUpdate();
+        });
+        $r->map('POST', '#^/profile/password$#', function (): void {
+            $this->handleProfilePasswordUpdate();
+        });
+        $r->map('GET', '#^/game/new$#', function (): void {
+            $this->renderNewGame();
+        });
+        $r->map('GET', '#^/game/invites$#', function (): void {
+            $this->renderInvites();
+        });
+        $r->map('GET', '#^/game$#', function (): void {
+            $this->renderGames();
+        });
+        $r->map('GET', '#^/game/([a-f0-9-]+)$#', function (array $m): void {
+            $this->renderGameRoom((string) $m[1]);
+        });
+        // legacy redirects
+        $r->map('GET', '#^/games/new$#', function (): void { header('Location: /game/new', true, 301); exit(); });
+        $r->map('GET', '#^/games/invites$#', function (): void { header('Location: /game/invites', true, 301); exit(); });
+        $r->map('GET', '#^/games$#', function (): void { header('Location: /game', true, 301); exit(); });
+        $r->map('GET', '#^/games/([a-f0-9-]+)$#', function (array $m): void { header('Location: /game/' . $m[1], true, 301); exit(); });
         $r->map('GET', '#^/feedback$#', function (): void {
             $this->renderFeedback();
         });
@@ -45,6 +71,9 @@ trait AppRouteRegistration
         $r->map('GET', '#^/panel/pages$#', function (): void {
             $this->renderPanel('pages');
         });
+        $r->map('GET', '#^/panel/games$#', function (): void {
+            $this->renderPanel('games');
+        });
         $r->map('GET', '#^/panel/users$#', function (): void {
             $this->renderUsers();
         });
@@ -59,6 +88,12 @@ trait AppRouteRegistration
         });
         $r->map('GET', '#^/panel/media$#', function (): void {
             $this->renderMediaLibrary();
+        });
+        $r->map('GET', '#^/panel/game-boards$#', function (): void {
+            $this->renderBoardTemplatesAdmin();
+        });
+        $r->map('POST', '#^/panel/game-boards$#', function (): void {
+            $this->handleBoardTemplateCreate();
         });
         $r->map('GET', '#^/panel/categories$#', function (): void {
             $this->renderCategories();
@@ -213,7 +248,7 @@ trait AppRouteRegistration
             }
             $data = $this->jsonInput();
             $role = (string) ($data['role'] ?? '');
-            if (!in_array($role, ['admin', 'author'], true)) {
+            if (!in_array($role, ['admin', 'author', 'player'], true)) {
                 throw new \InvalidArgumentException('Invalid role');
             }
             $usersRepo = new UserRepository(Database::pdo());
@@ -271,10 +306,28 @@ trait AppRouteRegistration
         $r->map('POST', '#^/api/v1/feedback$#', function (): void {
             $this->handleFeedbackApi();
         });
+        $r->map('POST', '#^/api/v1/game$#', function (): void {
+            $this->handleCreateGameApi();
+        });
+        $r->map('POST', '#^/api/v1/game/join$#', function (): void {
+            $this->handleJoinByInviteApi();
+        });
+        $r->map('POST', '#^/api/v1/game/([a-f0-9-]+)/invites$#', function (array $m): void {
+            $this->handleGameInviteApi((string) $m[1]);
+        });
+        $r->map('GET', '#^/api/v1/game/([a-f0-9-]+)/events$#', function (array $m): void {
+            $this->handleGamePollApi((string) $m[1]);
+        });
+        $r->map('POST', '#^/api/v1/game/([a-f0-9-]+)/commands$#', function (array $m): void {
+            $this->handleGameCommandApi((string) $m[1]);
+        });
+        $r->map('POST', '#^/api/v1/game/([a-f0-9-]+)/chat$#', function (array $m): void {
+            $this->handleGameChatApi((string) $m[1]);
+        });
 
         $r->map('GET', '#^/([a-z0-9-]+)$#', function (array $m): ?bool {
             $seg = $m[1];
-            $reservedSingle = ['panel', 'auth', 'api', 'assets', 'media', 'feedback', 'post', 'page', 'sitemap', 'robots', 'txt'];
+            $reservedSingle = ['panel', 'auth', 'api', 'assets', 'media', 'feedback', 'post', 'page', 'sitemap', 'robots', 'txt', 'games', 'game', 'profile'];
             if (in_array($seg, $reservedSingle, true)) {
                 return false;
             }

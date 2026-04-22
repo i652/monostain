@@ -31,19 +31,19 @@ final class ApiErrorMapper
         $msg = $e->getMessage();
 
         if ($msg === 'Unauthorized') {
-            return [401, ['error' => $msg, 'code' => 'UNAUTHORIZED']];
+            return [401, ['error' => 'Требуется авторизация', 'code' => 'UNAUTHORIZED']];
         }
 
         if ($msg === 'Forbidden') {
-            return [403, ['error' => $msg, 'code' => 'FORBIDDEN']];
+            return [403, ['error' => 'Недостаточно прав для выполнения действия', 'code' => 'FORBIDDEN']];
         }
 
         if ($e instanceof \InvalidArgumentException) {
             return [422, ['error' => $msg, 'code' => 'VALIDATION_ERROR']];
         }
 
-        if (in_array($msg, ['Post not found', 'Page not found', 'Media not found'], true)) {
-            return [404, ['error' => $msg, 'code' => 'NOT_FOUND']];
+        if (in_array($msg, ['Post not found', 'Page not found', 'Media not found', 'Game not found', 'Invite not found'], true)) {
+            return [404, ['error' => 'Запрошенный ресурс не найден', 'code' => 'NOT_FOUND']];
         }
 
         return [400, ['error' => $msg, 'code' => 'BAD_REQUEST']];

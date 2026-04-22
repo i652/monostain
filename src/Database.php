@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Stain;
 
 use PDO;
+use PDOException;
 
 final class Database
 {
@@ -20,11 +21,35 @@ final class Database
         $user = Config::get('DB_USER', 'stain');
         $pass = Config::get('DB_PASS', 'stain');
 
-        $dsn = "pgsql:host={$host};port={$port};dbname={$dbName}";
-        $pdo = new PDO($dsn, $user, $pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
+        $portsToTry = [$port];
+        // Частая ситуация в Docker: внутри сети нужен 5432, даже если снаружи проброшен 5434.
+        if ($host === 'postgres' && $port !== '5432') {
+            $portsToTry[] = '5432';
+        }
+        $portsToTry = array_values(array_unique($portsToTry));
+
+        $lastException = null;
+        foreach ($portsToTry as $tryPort) {
+            try {
+                $dsn = "pgsql:host={$host};port={$tryPort};dbname={$dbName}";
+                $pdo = new PDO($dsn, $user, $pass, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                ]);
+                break;
+            } catch (PDOException $e) {
+                $lastException = $e;
+                $pdo = null;
+            }
+        }
+        if (!$pdo instanceof PDO) {
+            $details = $lastException ? $lastException->getMessage() : 'нет деталей';
+            throw new \RuntimeException(
+                'Не удалось подключиться к базе данных PostgreSQL. ' .
+                'Проверьте DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASS и запуск контейнера postgres. ' .
+                'Технические детали: ' . $details
+            );
+        }
 
         self::ensureUsersNicknameSchema($pdo);
 
@@ -43,6 +68,11 @@ final class Database
         $ensured = true;
 
         try {
+            $existsStmt = $pdo->query("SELECT to_regclass('public.users') IS NOT NULL");
+            $usersTableExists = (bool) $existsStmt->fetchColumn();
+            if (!$usersTableExists) {
+                return;
+            }
             $pdo->exec('ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(64)');
             $pdo->exec("UPDATE users SET nickname = 'user_' || id::text WHERE nickname IS NULL OR TRIM(nickname) = ''");
             $pdo->exec('ALTER TABLE users ALTER COLUMN nickname SET NOT NULL');

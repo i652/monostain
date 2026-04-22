@@ -4,8 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= htmlspecialchars($title ?? 'Stain', ENT_QUOTES, 'UTF-8') ?></title>
-  <meta name="description" content="<?= htmlspecialchars($description ?? 'Stain CMS', ENT_QUOTES, 'UTF-8') ?>">
+  <title><?= htmlspecialchars($title ?? 'Monostain', ENT_QUOTES, 'UTF-8') ?></title>
+  <meta name="description" content="<?= htmlspecialchars($description ?? 'Monostain CMS', ENT_QUOTES, 'UTF-8') ?>">
   <link rel="canonical" href="<?= htmlspecialchars(($canonical ?? ''), ENT_QUOTES, 'UTF-8') ?>">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
@@ -47,18 +47,23 @@
   <?php endif; ?>
   <header class="site-header">
     <a class="brand-wrap" href="/">
-      <span class="brand">stain</span>
+      <span class="brand">monostain</span>
       <span class="brand-subtitle">Технологичные решения</span>
     </a>
     <nav class="top-nav" id="top-nav">
       <div class="top-nav-center">
-        <a class="pill-link pill-link--nav" href="/services.html">Услуги</a>
-        <a class="pill-link pill-link--nav" href="/contacts.html">Контакты</a>
-        <a class="pill-link pill-link--nav" href="/about.html">О нас</a>
+        <?php if ($viewer !== null): ?>
+          <a class="pill-link pill-link--nav" href="/game/new">Новая игра</a>
+          <a class="pill-link pill-link--nav" href="/game/invites">Приглашения</a>
+          <a class="pill-link pill-link--nav" href="/game">Игра</a>
+        <?php endif; ?>
       </div>
       <div class="top-nav-right">
         <?php if (in_array(($viewer['role'] ?? ''), ['admin', 'author'], true)): ?>
           <a class="pill-link pill-link--new-post" href="/panel/posts/new">+ Новый пост</a>
+          <a class="pill-link pill-link--nav" href="/profile">Профиль</a>
+        <?php elseif (($viewer['role'] ?? '') === 'player'): ?>
+          <a class="pill-link pill-link--nav" href="/profile">Профиль</a>
         <?php endif; ?>
         <?php if (($viewer['role'] ?? '') === 'admin'): ?>
           <a class="pill-link pill-link--nav" href="/panel/posts">Панель</a>
@@ -79,7 +84,7 @@
   </main>
   <footer class="footer">
     <div class="footer__addr">
-      <h1 class="footer__logo"><a class="footer__logo-link" href="/">stain</a></h1>
+      <h1 class="footer__logo"><a class="footer__logo-link" href="/">monostain</a></h1>
       <p class="footer__subtitle">Технологичные решения</p>
       <div class="footer-controls">
         <div class="theme-toggle-wrap" role="group" aria-label="Режим темы">
@@ -127,7 +132,7 @@
     </ul>
 
     <div class="legal">
-      <p>&copy; 2023 - 2026 stain. Все права защищены.</p>
+      <p>&copy; 2023 - 2026 monostain. Все права защищены.</p>
       <div class="legal__links">
         <span>Сделано с <span class="heart" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" focusable="false"><path d="M12 21s-6.7-4.35-9.2-7.73C.97 10.86 1.2 7.54 3.52 5.9a5.05 5.05 0 0 1 6.48.69L12 8.65l2-2.06a5.05 5.05 0 0 1 6.48-.69c2.32 1.64 2.55 4.96.72 7.37C18.7 16.65 12 21 12 21Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span> в России</span>
       </div>
@@ -142,5 +147,6 @@
   <script src="/assets/draft-post.js"></script>
   <script src="/assets/auth-popup.js"></script>
   <script src="/assets/theme.js"></script>
+  <script src="/assets/game-client.js"></script>
 </body>
 </html>

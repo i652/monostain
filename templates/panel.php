@@ -18,6 +18,8 @@ ob_start();
       <label for="panel_users">Пользователи</label>
       <input type="radio" name="panel_section" id="panel_media" value="media">
       <label for="panel_media">Медиа</label>
+      <input type="radio" name="panel_section" id="panel_games" value="games" <?= ($section ?? 'posts') === 'games' ? 'checked' : '' ?>>
+      <label for="panel_games">Игры</label>
     </div>
   </div>
 
@@ -38,6 +40,45 @@ ob_start();
       <a class="btn btn-success" href="/panel/pages/new">Новая страница</a>
     </div>
     <div id="pages-panel-list" class="panel-list" data-kind="pages"></div>
+  </section>
+
+  <section class="panel-block panel-section" data-panel="games" <?= ($section ?? 'posts') !== 'games' ? 'hidden' : '' ?>>
+    <div class="panel-head">
+      <h2>Игры</h2>
+      <a class="btn btn-outline" href="/panel/games">Обновить</a>
+    </div>
+    <?php if (isset($gamesDashboard) && is_array($gamesDashboard)): ?>
+      <p class="meta">Создано сегодня: <strong><?= (int) ($gamesDashboard['today_count'] ?? 0) ?></strong></p>
+      <p class="meta">Создано за всё время: <strong><?= (int) ($gamesDashboard['all_count'] ?? 0) ?></strong></p>
+
+      <h3>Игры за сегодня</h3>
+      <div class="panel-list">
+      <?php foreach (($gamesDashboard['today_games'] ?? []) as $g): ?>
+        <div class="panel-list-item">
+          <div><strong><?= htmlspecialchars((string) ($g['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong></div>
+          <div class="meta">
+            ID: <?= htmlspecialchars((string) ($g['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
+            Создал: <?= htmlspecialchars((string) ($g['creator_nickname'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
+            <?= htmlspecialchars((string) ($g['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+          </div>
+        </div>
+      <?php endforeach; ?>
+      </div>
+
+      <h3>Игры за всё время</h3>
+      <div class="panel-list">
+      <?php foreach (($gamesDashboard['all_games'] ?? []) as $g): ?>
+        <div class="panel-list-item">
+          <div><strong><?= htmlspecialchars((string) ($g['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong></div>
+          <div class="meta">
+            ID: <?= htmlspecialchars((string) ($g['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
+            Создал: <?= htmlspecialchars((string) ($g['creator_nickname'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
+            <?= htmlspecialchars((string) ($g['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+          </div>
+        </div>
+      <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
   </section>
 </section>
 <?php

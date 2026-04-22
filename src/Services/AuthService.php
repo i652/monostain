@@ -38,7 +38,7 @@ final class AuthService
         }
 
         $passwordHash = password_hash($password, PASSWORD_ARGON2ID);
-        $user = $this->users->create($email, $passwordHash, 'author', $nickname);
+        $user = $this->users->create($email, $passwordHash, 'player', $nickname);
 
         return [
             'user' => [

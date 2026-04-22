@@ -38,6 +38,7 @@ ob_start();
       <input id="user_password" type="password" name="password" required minlength="8" autocomplete="new-password">
       <label for="user_role">Роль</label>
       <select id="user_role" name="role">
+        <option value="player">player</option>
         <option value="author">author</option>
         <option value="admin">admin</option>
       </select>

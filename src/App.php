@@ -8,10 +8,12 @@ use Stain\Http\ApiErrorMapper;
 use Stain\Http\PublicDocumentHeaders;
 use Stain\Http\Router;
 use Stain\Repositories\CategoryRepository;
+use Stain\Repositories\GameRepository;
 use Stain\Repositories\MediaRepository;
 use Stain\Repositories\PostRepository;
 use Stain\Repositories\UserRepository;
 use Stain\Services\AuthService;
+use Stain\Services\GameService;
 use Stain\Services\MediaService;
 use Stain\Services\PostService;
 use Stain\Util\HtmlPublicContent;
@@ -21,31 +23,53 @@ final class App
 {
     use AppRouteRegistration;
 
-    private AuthService $authService;
-    private PostService $postService;
-    private MediaService $mediaService;
-    private CategoryRepository $categoryRepository;
+    private ?AuthService $authService = null;
+    private ?PostService $postService = null;
+    private ?MediaService $mediaService = null;
+    private ?GameService $gameService = null;
+    private ?CategoryRepository $categoryRepository = null;
+    private ?UserRepository $userRepository = null;
     private Jwt $jwt;
+    private ?string $bootError = null;
 
     public function __construct()
     {
-        $pdo = Database::pdo();
         $this->jwt = new Jwt(Config::get('JWT_SECRET', 'dev-secret-change-me'));
-        $ttl = (int) Config::get('JWT_TTL_SECONDS', '3600');
-        $this->authService = new AuthService(new UserRepository($pdo), $this->jwt, $ttl);
-        $this->categoryRepository = new CategoryRepository($pdo);
-        $mediaRepository = new MediaRepository($pdo);
-        $postRepository = new PostRepository($pdo);
-        $this->postService = new PostService($postRepository, $this->categoryRepository, $mediaRepository);
-        $this->mediaService = new MediaService($mediaRepository, $postRepository);
-        // No background worker/cron: promote scheduled posts on requests.
-        $this->postService->promoteScheduled();
+        try {
+            $pdo = Database::pdo();
+            $ttl = (int) Config::get('JWT_TTL_SECONDS', '3600');
+            $this->userRepository = new UserRepository($pdo);
+            $this->authService = new AuthService($this->userRepository, $this->jwt, $ttl);
+            $this->categoryRepository = new CategoryRepository($pdo);
+            $mediaRepository = new MediaRepository($pdo);
+            $postRepository = new PostRepository($pdo);
+            $gameRepository = new GameRepository($pdo);
+            $this->postService = new PostService($postRepository, $this->categoryRepository, $mediaRepository);
+            $this->mediaService = new MediaService($mediaRepository, $postRepository);
+            $this->gameService = new GameService($gameRepository, $this->userRepository);
+            // No background worker/cron: promote scheduled posts on requests.
+            $this->postService->promoteScheduled();
+        } catch (Throwable $e) {
+            $this->bootError = $this->translateErrorMessage($e->getMessage());
+        }
     }
 
     public function run(): void
     {
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        if ($this->bootError !== null) {
+            if (str_starts_with($path, '/api/')) {
+                $this->respondJson(['error' => $this->bootError, 'code' => 'BOOT_ERROR'], 503);
+                return;
+            }
+            http_response_code(503);
+            $title = 'Сервис временно недоступен';
+            $description = $this->bootError;
+            $viewer = null;
+            require dirname(__DIR__) . '/templates/error.php';
+            return;
+        }
 
         try {
             $router = new Router();
@@ -76,12 +100,12 @@ final class App
             if ($method === 'POST') {
                 $back = $_SERVER['HTTP_REFERER'] ?? '/';
                 $sep = str_contains($back, '?') ? '&' : '?';
-                header('Location: ' . $back . $sep . 'error=' . rawurlencode($e->getMessage()));
+                header('Location: ' . $back . $sep . 'error=' . rawurlencode($this->translateErrorMessage($e->getMessage())));
                 exit();
             }
             http_response_code($status);
             $title = 'Ошибка';
-            $description = $e->getMessage();
+            $description = $this->translateErrorMessage($e->getMessage());
             $viewer = $this->getCurrentUser();
             require dirname(__DIR__) . '/templates/404.php';
         }
@@ -447,8 +471,12 @@ final class App
             throw new \RuntimeException('Forbidden');
         }
         $viewer = $actor;
-        if (!in_array($section, ['posts', 'pages', 'categories'], true)) {
+        if (!in_array($section, ['posts', 'pages', 'categories', 'games'], true)) {
             $section = 'posts';
+        }
+        $gamesDashboard = null;
+        if ($section === 'games') {
+            $gamesDashboard = $this->gameService->adminGamesDashboard($actor);
         }
         $title = 'Панель - Stain';
         $description = 'Manage posts and static pages.';
@@ -599,8 +627,8 @@ final class App
         }
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
         $password = (string) ($_POST['password'] ?? '');
-        $role = (string) ($_POST['role'] ?? 'author');
-        if (!in_array($role, ['admin', 'author'], true)) {
+        $role = (string) ($_POST['role'] ?? 'player');
+        if (!in_array($role, ['admin', 'author', 'player'], true)) {
             throw new \InvalidArgumentException('Invalid role');
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -664,7 +692,7 @@ final class App
             throw new \RuntimeException('Forbidden');
         }
         $role = (string) ($_POST['role'] ?? '');
-        if (!in_array($role, ['admin', 'author'], true)) {
+        if (!in_array($role, ['admin', 'author', 'player'], true)) {
             throw new \InvalidArgumentException('Invalid role');
         }
         $usersRepo = new UserRepository(Database::pdo());
@@ -989,5 +1017,182 @@ final class App
         $this->postService->delete($actor, $pageId);
         header('Location: /panel/posts?notice=' . rawurlencode('Страница удалена'));
         exit();
+    }
+
+    private function renderProfile(): void
+    {
+        $actor = $this->requireAuth();
+        $viewer = $actor;
+        $user = $this->userRepository->findById((int) $actor['sub']);
+        $title = 'Профиль - Monostain';
+        $description = 'Управление профилем';
+        require dirname(__DIR__) . '/templates/profile.php';
+    }
+
+    private function handleProfileUpdate(): void
+    {
+        $actor = $this->requireAuth();
+        $userId = (int) $actor['sub'];
+        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+        $nickname = trim((string) ($_POST['nickname'] ?? ''));
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            header('Location: /profile?error=' . rawurlencode('Некорректный email'));
+            exit();
+        }
+        $nickErr = $this->authService->validateNickname($nickname);
+        if ($nickErr !== null) {
+            header('Location: /profile?error=' . rawurlencode($nickErr));
+            exit();
+        }
+        $userByEmail = $this->userRepository->findByEmail($email);
+        if ($userByEmail !== null && (int) $userByEmail['id'] !== $userId) {
+            header('Location: /profile?error=' . rawurlencode('Этот email уже занят'));
+            exit();
+        }
+        $userByNick = $this->userRepository->findByNicknameIgnoreCase($nickname);
+        if ($userByNick !== null && (int) $userByNick['id'] !== $userId) {
+            header('Location: /profile?error=' . rawurlencode('Этот никнейм уже занят'));
+            exit();
+        }
+        $this->userRepository->updateIdentity($userId, $email, $nickname);
+        header('Location: /profile?notice=' . rawurlencode('Профиль обновлён'));
+        exit();
+    }
+
+    private function handleProfilePasswordUpdate(): void
+    {
+        $actor = $this->requireAuth();
+        $userId = (int) $actor['sub'];
+        $password = trim((string) ($_POST['password'] ?? ''));
+        $passwordConfirm = trim((string) ($_POST['password_confirm'] ?? ''));
+        if (strlen($password) < 8) {
+            header('Location: /profile?error=' . rawurlencode('Пароль не короче 8 символов'));
+            exit();
+        }
+        if ($password !== $passwordConfirm) {
+            header('Location: /profile?error=' . rawurlencode('Пароль и подтверждение не совпадают'));
+            exit();
+        }
+        $this->userRepository->updatePasswordHash($userId, password_hash($password, PASSWORD_ARGON2ID));
+        header('Location: /profile?notice=' . rawurlencode('Пароль обновлён'));
+        exit();
+    }
+
+    private function renderNewGame(): void
+    {
+        $viewer = $this->requireAuth();
+        $title = 'Новая игра - Monostain';
+        $description = 'Создание игры';
+        require dirname(__DIR__) . '/templates/game_new.php';
+    }
+
+    private function renderInvites(): void
+    {
+        $viewer = $this->requireAuth();
+        $invites = $this->gameService->listMyInvites($viewer);
+        $title = 'Приглашения - Monostain';
+        $description = 'Активные приглашения';
+        require dirname(__DIR__) . '/templates/game_invites.php';
+    }
+
+    private function renderGames(): void
+    {
+        $viewer = $this->requireAuth();
+        $games = $this->gameService->listGamesForUser($viewer);
+        $title = 'Игры - Monostain';
+        $description = 'Список игр';
+        require dirname(__DIR__) . '/templates/game_list.php';
+    }
+
+    private function renderGameRoom(string $gameId): void
+    {
+        $viewer = $this->requireAuth();
+        $gameView = $this->gameService->getGameView($viewer, $gameId);
+        $title = 'Игра - Monostain';
+        $description = 'Игровая сессия';
+        require dirname(__DIR__) . '/templates/game_room.php';
+    }
+
+    private function handleCreateGameApi(): void
+    {
+        $actor = $this->requireAuth();
+        $this->respondJson($this->gameService->createGame($actor, $this->jsonInput()), 201);
+    }
+
+    private function handleGameInviteApi(string $gameId): void
+    {
+        $actor = $this->requireAuth();
+        $data = $this->jsonInput();
+        $nickname = isset($data['nickname']) ? (string) $data['nickname'] : null;
+        $this->respondJson($this->gameService->createInvite($actor, $gameId, $nickname), 201);
+    }
+
+    private function handleJoinByInviteApi(): void
+    {
+        $actor = $this->requireAuth();
+        $data = $this->jsonInput();
+        $token = trim((string) ($data['token'] ?? ''));
+        if ($token === '') {
+            throw new \InvalidArgumentException('Не указан токен приглашения');
+        }
+        $this->respondJson($this->gameService->joinByInvite($actor, $token));
+    }
+
+    private function handleGameChatApi(string $gameId): void
+    {
+        $actor = $this->requireAuth();
+        $data = $this->jsonInput();
+        $msg = (string) ($data['message'] ?? '');
+        $toPlayerId = isset($data['to_player_id']) ? (int) $data['to_player_id'] : null;
+        $this->respondJson($this->gameService->postChat($actor, $gameId, $msg, $toPlayerId), 201);
+    }
+
+    private function handleGamePollApi(string $gameId): void
+    {
+        $actor = $this->requireAuth();
+        $sinceSeq = max(0, (int) ($_GET['since'] ?? 0));
+        $events = $this->gameService->pollEvents($actor, $gameId, $sinceSeq);
+        $this->respondJson(['events' => $events]);
+    }
+
+    private function handleGameCommandApi(string $gameId): void
+    {
+        $actor = $this->requireAuth();
+        $event = $this->gameService->handleCommand($actor, $gameId, $this->jsonInput());
+        $this->respondJson($event, 201);
+    }
+
+    private function renderBoardTemplatesAdmin(): void
+    {
+        $viewer = $this->requireAuth();
+        $templates = $this->gameService->listBoardTemplates($viewer);
+        $title = 'Карты игры - Monostain';
+        $description = 'Конструктор карт';
+        require dirname(__DIR__) . '/templates/game_boards.php';
+    }
+
+    private function handleBoardTemplateCreate(): void
+    {
+        $actor = $this->requireAuth();
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $published = isset($_POST['is_published']) && (string) $_POST['is_published'] === '1';
+        $this->gameService->createBoardTemplate($actor, [
+            'name' => $name,
+            'is_published' => $published,
+        ]);
+        header('Location: /panel/game-boards?notice=' . rawurlencode('Карта создана'));
+        exit();
+    }
+
+    private function translateErrorMessage(string $message): string
+    {
+        return match ($message) {
+            'Unauthorized' => 'Требуется авторизация',
+            'Forbidden' => 'Недостаточно прав для выполнения действия',
+            'Not found', 'Post not found', 'Page not found', 'Game not found', 'Invite not found' => 'Запрошенный ресурс не найден',
+            'Invalid role' => 'Указана недопустимая роль',
+            default => $message,
+        };
     }
 }

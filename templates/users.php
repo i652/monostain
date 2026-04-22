@@ -18,6 +18,8 @@ ob_start();
       <label for="panel_users">Пользователи</label>
       <input type="radio" name="panel_section" id="panel_media" value="media">
       <label for="panel_media">Медиа</label>
+      <input type="radio" name="panel_section" id="panel_games" value="games">
+      <label for="panel_games">Игры</label>
     </div>
   </div>
   <div class="panel-block">
@@ -35,10 +37,15 @@ ob_start();
         ?>
         <div class="panel-list-item">
           <div><strong><?= htmlspecialchars((string) ($u['nickname'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong></div>
-          <div class="meta"><?= htmlspecialchars($u['email'], ENT_QUOTES, 'UTF-8') ?> · id: <?= $uid ?> · роль: <?= htmlspecialchars($u['role'], ENT_QUOTES, 'UTF-8') ?></div>
+          <div class="meta">
+            <?= htmlspecialchars($u['email'], ENT_QUOTES, 'UTF-8') ?> · id: <?= $uid ?> · роль: <?= htmlspecialchars($u['role'], ENT_QUOTES, 'UTF-8') ?>
+            · игр сегодня: <?= (int) ($u['games_today'] ?? 0) ?>
+            · игр всего: <?= (int) ($u['games_total'] ?? 0) ?>
+          </div>
           <div class="role-row">
             <form method="post" action="/panel/users/<?= $uid ?>/role" class="role-form role-form-main">
               <select name="role" class="role-select">
+                <option value="player" <?= $u['role'] === 'player' ? 'selected' : '' ?>>player</option>
                 <option value="author" <?= $u['role'] === 'author' ? 'selected' : '' ?>>author</option>
                 <option value="admin" <?= $u['role'] === 'admin' ? 'selected' : '' ?>>admin</option>
               </select>
@@ -70,7 +77,7 @@ ob_start();
     <?php foreach ($users as $u): ?>
       <?php
         $uid = (int) $u['id'];
-        $roleField = $u['role'] === 'admin' ? 'admin' : 'author';
+        $roleField = in_array($u['role'], ['admin', 'author', 'player'], true) ? $u['role'] : 'player';
       ?>
       <div id="pwd-u-<?= $uid ?>" class="pwd-overlay" role="dialog" aria-modal="true" aria-labelledby="pwd-title-<?= $uid ?>">
         <a href="#" class="pwd-overlay__backdrop" aria-label="Закрыть"></a>

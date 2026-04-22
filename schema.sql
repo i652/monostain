@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   email VARCHAR(190) NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'author')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'author', 'player')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -110,3 +110,198 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(64);
 UPDATE users SET nickname = 'user_' || id::text WHERE nickname IS NULL OR trim(nickname) = '';
 ALTER TABLE users ALTER COLUMN nickname SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_lower ON users (LOWER(nickname));
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'author', 'player'));
+
+-- Core game tables
+CREATE TABLE IF NOT EXISTS games (
+  id UUID PRIMARY KEY,
+  created_by BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  board_template_id BIGINT,
+  status VARCHAR(20) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'finished', 'cancelled')),
+  title VARCHAR(120) NOT NULL DEFAULT 'Monopoly game',
+  max_players SMALLINT NOT NULL DEFAULT 8 CHECK (max_players BETWEEN 1 AND 8),
+  allow_bots BOOLEAN NOT NULL DEFAULT TRUE,
+  winner_player_id BIGINT,
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE games DROP CONSTRAINT IF EXISTS games_max_players_check;
+ALTER TABLE games ADD CONSTRAINT games_max_players_check CHECK (max_players BETWEEN 1 AND 8);
+
+CREATE TABLE IF NOT EXISTS game_players (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  seat_no SMALLINT NOT NULL,
+  nickname_snapshot VARCHAR(64) NOT NULL,
+  is_bot BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  cash INT NOT NULL DEFAULT 1500,
+  position SMALLINT NOT NULL DEFAULT 0 CHECK (position BETWEEN 0 AND 39),
+  in_jail BOOLEAN NOT NULL DEFAULT FALSE,
+  jail_turns SMALLINT NOT NULL DEFAULT 0,
+  bankrupt BOOLEAN NOT NULL DEFAULT FALSE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  left_at TIMESTAMPTZ,
+  UNIQUE (game_id, seat_no),
+  UNIQUE (game_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS game_state_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  version_no BIGINT NOT NULL,
+  state_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, version_no)
+);
+
+CREATE TABLE IF NOT EXISTS game_events (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  event_seq BIGINT NOT NULL,
+  event_type VARCHAR(64) NOT NULL,
+  actor_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  actor_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  client_msg_id VARCHAR(64),
+  payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, event_seq),
+  UNIQUE (game_id, client_msg_id)
+);
+
+CREATE TABLE IF NOT EXISTS game_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  from_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  to_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  amount INT NOT NULL,
+  reason VARCHAR(80) NOT NULL,
+  event_id BIGINT REFERENCES game_events(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS game_chat_messages (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  from_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  to_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  is_private BOOLEAN NOT NULL DEFAULT FALSE,
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS game_invites (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  token VARCHAR(72) NOT NULL UNIQUE,
+  created_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invited_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'accepted', 'revoked', 'expired')),
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS game_board_templates (
+  id BIGSERIAL PRIMARY KEY,
+  created_by BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  name VARCHAR(120) NOT NULL UNIQUE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  is_published BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS game_board_cells (
+  id BIGSERIAL PRIMARY KEY,
+  board_template_id BIGINT NOT NULL REFERENCES game_board_templates(id) ON DELETE CASCADE,
+  position SMALLINT NOT NULL CHECK (position BETWEEN 0 AND 39),
+  cell_type VARCHAR(24) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  buy_price INT NOT NULL DEFAULT 0,
+  rent_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+  extra_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  UNIQUE (board_template_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS game_property_state (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  cell_position SMALLINT NOT NULL CHECK (cell_position BETWEEN 0 AND 39),
+  owner_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  houses SMALLINT NOT NULL DEFAULT 0 CHECK (houses BETWEEN 0 AND 4),
+  has_hotel BOOLEAN NOT NULL DEFAULT FALSE,
+  mortgaged BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, cell_position)
+);
+
+CREATE TABLE IF NOT EXISTS game_turns (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  turn_no BIGINT NOT NULL,
+  player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
+  dice_1 SMALLINT,
+  dice_2 SMALLINT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  UNIQUE (game_id, turn_no)
+);
+
+CREATE TABLE IF NOT EXISTS game_trades (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  proposer_player_id BIGINT NOT NULL REFERENCES game_players(id) ON DELETE CASCADE,
+  target_player_id BIGINT NOT NULL REFERENCES game_players(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'rejected', 'cancelled')),
+  note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS game_trade_items (
+  id BIGSERIAL PRIMARY KEY,
+  trade_id BIGINT NOT NULL REFERENCES game_trades(id) ON DELETE CASCADE,
+  offered_by_player_id BIGINT NOT NULL REFERENCES game_players(id) ON DELETE CASCADE,
+  item_type VARCHAR(20) NOT NULL CHECK (item_type IN ('cash', 'property')),
+  cash_amount INT,
+  property_position SMALLINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS game_player_stats (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  player_id BIGINT NOT NULL REFERENCES game_players(id) ON DELETE CASCADE,
+  turns_count INT NOT NULL DEFAULT 0,
+  rent_paid INT NOT NULL DEFAULT 0,
+  rent_received INT NOT NULL DEFAULT 0,
+  taxes_paid INT NOT NULL DEFAULT 0,
+  cards_drawn INT NOT NULL DEFAULT 0,
+  jail_visits INT NOT NULL DEFAULT 0,
+  distance_moved INT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS game_history_archive (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL UNIQUE REFERENCES games(id) ON DELETE CASCADE,
+  summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_status ON games (status);
+CREATE INDEX IF NOT EXISTS idx_games_created_at ON games (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players (game_id);
+CREATE INDEX IF NOT EXISTS idx_game_events_game_seq ON game_events (game_id, event_seq);
+CREATE INDEX IF NOT EXISTS idx_game_events_created_at ON game_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_game_chat_game_created ON game_chat_messages (game_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_game_invites_user_status ON game_invites (invited_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_game_transactions_game_created ON game_transactions (game_id, created_at DESC);

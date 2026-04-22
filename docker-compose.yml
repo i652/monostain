@@ -23,9 +23,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: stain
-      POSTGRES_USER: stain
-      POSTGRES_PASSWORD: stain
+      POSTGRES_DB: monostain
+      POSTGRES_USER: monostain
+      POSTGRES_PASSWORD: monostain
     ports:
       - "5432:5432"
     volumes:
