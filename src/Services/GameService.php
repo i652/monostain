@@ -448,6 +448,7 @@ final class GameService
                     throw new \InvalidArgumentException('Владелец клетки не найден');
                 }
                 $offered = (int) ($data['offer_amount'] ?? 0);
+                $approvedByOwner = $this->normalizeBool($data['approved_by_owner'] ?? false);
                 $buildingCost = (int) ($space['building_cost'] ?? 0);
                 $houses = (int) ($prop['houses'] ?? 0);
                 $hasHotel = $this->normalizeBool($prop['has_hotel'] ?? false);
@@ -459,12 +460,16 @@ final class GameService
                 if ((int) $player['cash'] < $offered) {
                     throw new \InvalidArgumentException('Недостаточно средств для выкупа');
                 }
+                if (!$approvedByOwner) {
+                    $payload = ['position' => $position, 'offer_amount' => $offered, 'seller_player_id' => $ownerPlayerId, 'buyer_player_id' => (int) $player['id'], 'buyout_declined' => true];
+                    break;
+                }
                 $buyerCash = (int) $player['cash'] - $offered;
                 $ownerCash = (int) $owner['cash'] + $offered;
                 $this->games->updatePlayerState((int) $player['id'], $buyerCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
                 $this->games->updatePlayerState((int) $owner['id'], $ownerCash, (int) $owner['position'], $this->normalizeBool($owner['in_jail'] ?? false), (int) $owner['jail_turns']);
                 $this->games->upsertPropertyOwner($gameId, $position, (int) $player['id']);
-                $payload = ['position' => $position, 'offer_amount' => $offered, 'seller_player_id' => $ownerPlayerId, 'buyer_player_id' => (int) $player['id'], 'cash' => $buyerCash];
+                $payload = ['position' => $position, 'offer_amount' => $offered, 'seller_player_id' => $ownerPlayerId, 'buyer_player_id' => (int) $player['id'], 'cash' => $buyerCash, 'buyout_approved' => true];
                 break;
             case 'build':
                 $position = (int) ($data['position'] ?? $player['position']);
@@ -677,7 +682,12 @@ final class GameService
                 $payload['buyout_min'] = $minBuyout;
                 $payload['owner_player_id'] = $ownerPlayerId;
             } elseif (($space['type'] ?? '') === 'property') {
-                $payload['can_build'] = true;
+                $state = $this->games->findPropertyState($gameId, $position);
+                $ownsGroup = $this->ownsWholeGroup($gameId, (int) $player['id'], (int) ($space['group'] ?? -1));
+                $houses = (int) ($state['houses'] ?? 0);
+                $hasHotel = $this->normalizeBool($state['has_hotel'] ?? false);
+                $payload['can_build_house'] = $ownsGroup && !$hasHotel && $houses < 4;
+                $payload['can_build_hotel'] = $ownsGroup && !$hasHotel && $houses >= 4;
                 $payload['building_cost'] = (int) ($space['building_cost'] ?? 0);
             }
         } elseif (in_array(($space['type'] ?? ''), ['chance', 'chest'], true)) {
