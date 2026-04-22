@@ -40,6 +40,12 @@
       command_roll: "Бросок кубиков",
       command_end_turn: "Завершение хода",
       command_pay: "Перевод средств",
+      command_pay_bail: "Оплачен залог",
+      command_buy: "Покупка собственности",
+      command_sell: "Продажа собственности",
+      command_pay_rent: "Оплата ренты",
+      command_buyout: "Выкуп собственности",
+      command_build: "Строительство",
     };
     return map[type] || "Событие";
   }
@@ -113,8 +119,39 @@
   let controlIndex = 0;
   const playerIdsInOrder = players.map((p) => Number(p.id || 0)).filter((v) => v > 0);
   const playerNameById = new Map(players.map((p) => [Number(p.id || 0), String(p.nickname_snapshot || "Игрок")]));
+  const boardMeta = {
+    1: { name: "Средиземноморский пр.", price: 60, rent: 2, group: 0 },
+    3: { name: "Балтик-авеню", price: 60, rent: 4, group: 0 },
+    5: { name: "Читающая Ж/Д", price: 200, rent: 25, group: 0 },
+    6: { name: "Ориентал-авеню", price: 100, rent: 6, group: 1 },
+    8: { name: "Вермонт-авеню", price: 100, rent: 6, group: 1 },
+    9: { name: "Коннектикут-авеню", price: 120, rent: 8, group: 1 },
+    11: { name: "Сент-Чарльз-плейс", price: 140, rent: 10, group: 2 },
+    12: { name: "Электрокомпания", price: 150, rent: 10, group: 0 },
+    13: { name: "Стейтс-авеню", price: 140, rent: 10, group: 2 },
+    14: { name: "Вирджиния-авеню", price: 160, rent: 12, group: 2 },
+    15: { name: "Пенсильвания Ж/Д", price: 200, rent: 25, group: 0 },
+    16: { name: "Сент-Джеймс-плейс", price: 180, rent: 14, group: 3 },
+    18: { name: "Теннесси-авеню", price: 180, rent: 14, group: 3 },
+    19: { name: "Нью-Йорк-авеню", price: 200, rent: 16, group: 3 },
+    21: { name: "Кентукки-авеню", price: 220, rent: 18, group: 4 },
+    22: { name: "Индиана-авеню", price: 220, rent: 18, group: 4 },
+    24: { name: "Иллинойс-авеню", price: 240, rent: 20, group: 4 },
+    25: { name: "Ж/д B&O", price: 200, rent: 25, group: 0 },
+    26: { name: "Атлантик-авеню", price: 260, rent: 22, group: 5 },
+    27: { name: "Вентнор-авеню", price: 260, rent: 22, group: 5 },
+    28: { name: "Водоканал", price: 150, rent: 10, group: 0 },
+    29: { name: "Мэрвин-гарденс", price: 280, rent: 24, group: 5 },
+    31: { name: "Пасифик-авеню", price: 300, rent: 26, group: 6 },
+    32: { name: "Сев. Каролина-авеню", price: 300, rent: 26, group: 6 },
+    34: { name: "Пенсильвания-авеню", price: 320, rent: 28, group: 6 },
+    35: { name: "Короткая линия", price: 200, rent: 25, group: 0 },
+    37: { name: "Парк-плейс", price: 350, rent: 35, group: 7 },
+    39: { name: "Бродвей", price: 400, rent: 50, group: 7 },
+  };
   const processedEventSeq = new Set();
-  const financeEventTypes = new Set(["command_pay", "property_bought", "property_sold", "trade_completed", "tax_paid", "rent_paid"]);
+  const financeEventTypes = new Set(["command_pay", "command_buy", "command_sell", "command_pay_bail", "property_bought", "property_sold", "trade_completed", "tax_paid", "rent_paid"]);
+  const groupColorClass = { 0: "group-0", 1: "group-1", 2: "group-2", 3: "group-3", 4: "group-4", 5: "group-5", 6: "group-6", 7: "group-7" };
   const allEvents = [];
   let sinceSeq = 0;
   let notifyTimer = null;
@@ -124,8 +161,13 @@
   const rollAction = document.querySelector(".main-action .action.roll");
   const endAction = document.querySelector(".main-action .action.end");
   const purchaseAction = document.querySelector(".main-action .action.purchase");
+  const rentAction = document.querySelector(".main-action .action.rent");
+  const buildAction = document.querySelector(".main-action .action.build");
   const purchaseName = document.querySelector(".main-action .action.purchase .name");
   const purchaseCost = document.querySelector(".main-action .action.purchase .cost-amount");
+  const rentAmount = document.querySelector(".main-action .action.rent .rent-amount");
+  let currentRentDue = 0;
+  let currentBuyoutMin = 0;
   renderTokens();
   renderRightPanel();
   tabs.forEach((tab) => {
@@ -239,6 +281,24 @@
     if (eventObj.event_type === "command_pay") {
       return `${actorName(eventObj)} перевёл ${payload.amount} игроку #${payload.to_player_id}`;
     }
+    if (eventObj.event_type === "command_buy") {
+      return `Куплена клетка #${payload.position} за ${payload.price}`;
+    }
+    if (eventObj.event_type === "command_sell") {
+      return `Продана клетка #${payload.position} за ${payload.price}`;
+    }
+    if (eventObj.event_type === "command_pay_bail") {
+      return `Оплачен залог ${payload.bail_paid || 50}`;
+    }
+    if (eventObj.event_type === "command_pay_rent") {
+      return `Оплачена рента ${payload.rent_paid || 0} игроку #${payload.to_player_id || 0}`;
+    }
+    if (eventObj.event_type === "command_buyout") {
+      return `Выкуплена клетка #${payload.position} за ${payload.offer_amount}`;
+    }
+    if (eventObj.event_type === "command_build") {
+      return `Постройка: ${payload.build_type === "hotel" ? "отель" : "дом"} на клетке #${payload.position}`;
+    }
     if (eventObj.event_type === "chat_sent") {
       return `${actorName(eventObj)}: ${payload.message || "Сообщение в чат"}`;
     }
@@ -267,7 +327,7 @@
   function refreshPlayers(events) {
     events.forEach((e) => {
       if (e.event_type !== "command_roll") return;
-      const payload = typeof e.payload_json === "string" ? JSON.parse(e.payload_json) : e.payload_json;
+      const payload = parsePayload(e);
       const actorId = Number(e.actor_player_id || 0);
       const chip = document.querySelector('.player-chip[data-player-id="' + actorId + '"]');
       if (!chip || !payload) return;
@@ -287,6 +347,10 @@
       }
       if (diceStatus) diceStatus.classList.remove("hidden");
       if (payload.offer_purchase) {
+        currentRentDue = 0;
+        currentBuyoutMin = 0;
+        if (rentAction) rentAction.classList.add("hidden");
+        if (buildAction) buildAction.classList.add("hidden");
         if (rollAction) rollAction.classList.add("hidden");
         if (endAction) endAction.classList.add("hidden");
         if (purchaseAction) purchaseAction.classList.remove("hidden");
@@ -294,9 +358,38 @@
         if (purchaseCost) purchaseCost.textContent = String(Number(payload.price || 0));
       } else {
         if (purchaseAction) purchaseAction.classList.add("hidden");
-        if (rollAction) rollAction.classList.add("hidden");
-        if (endAction) endAction.classList.remove("hidden");
+        if (payload.rent_due) {
+          currentRentDue = Number(payload.rent_due || 0);
+          currentBuyoutMin = Number(payload.buyout_min || 0);
+          if (rentAmount) rentAmount.textContent = String(currentRentDue);
+          if (rentAction) rentAction.classList.remove("hidden");
+          if (buildAction) buildAction.classList.add("hidden");
+          if (rollAction) rollAction.classList.add("hidden");
+          if (endAction) endAction.classList.add("hidden");
+        } else {
+          if (rentAction) rentAction.classList.add("hidden");
+          if (payload.can_build) {
+            if (buildAction) buildAction.classList.remove("hidden");
+          } else if (buildAction) {
+            buildAction.classList.add("hidden");
+          }
+        }
+        if (payload.still_in_jail) {
+          if (rollAction) rollAction.classList.add("hidden");
+          if (endAction) endAction.classList.add("hidden");
+          document.querySelectorAll(".action.roll-pay").forEach((el) => el.classList.remove("hidden"));
+          showBoardModal("Тюрьма", `Не выпали дубли. Осталось попыток: ${Number(payload.jail_tries_left || 0)}.`);
+        } else {
+          document.querySelectorAll(".action.roll-pay,.action.pay-bail").forEach((el) => el.classList.add("hidden"));
+          if (rollAction) rollAction.classList.add("hidden");
+          if (endAction) endAction.classList.remove("hidden");
+        }
       }
+      if (payload.sent_to_jail) showBoardModal("Тюрьма", "Игрок отправлен в тюрьму.");
+      if (payload.bail_paid) showBoardModal("Тюрьма", `Оплачен залог: ${payload.bail_paid}`);
+      if (payload.card) showCardModal("Карточка", String(payload.card));
+      if (payload.rent_paid) showBoardModal("Рента", `Оплачена рента: ${payload.rent_paid}`);
+      if (payload.tax_paid) showBoardModal("Налог", `Оплачен налог: ${payload.tax_paid}`);
       const fromPos = Number(payload.from_position ?? payload.position ?? 0);
       const toPos = Number(payload.position || 0);
       animateMove(actorId, fromPos, toPos);
@@ -306,11 +399,14 @@
       if (rollAction) rollAction.classList.remove("hidden");
       if (endAction) endAction.classList.add("hidden");
       if (purchaseAction) purchaseAction.classList.add("hidden");
+      if (rentAction) rentAction.classList.add("hidden");
+      if (buildAction) buildAction.classList.add("hidden");
       if (playerIdsInOrder.length > 0) {
         controlIndex = (controlIndex + 1) % playerIdsInOrder.length;
         renderRightPanel();
       }
     });
+    refreshCurrentPlayerInfo();
   }
 
   async function pollLoop() {
@@ -367,6 +463,22 @@
       }
     });
   });
+  document.querySelectorAll(".pay-bail").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+      try {
+        await postJson("/api/v1/game/" + gameId + "/commands", {
+          action: "pay_bail",
+          as_player_id: actorPlayerId,
+          client_msg_id: "bail_" + Date.now(),
+        });
+        document.querySelectorAll(".action.pay-bail,.action.roll-pay").forEach((el) => el.classList.add("hidden"));
+        if (rollAction) rollAction.classList.remove("hidden");
+      } catch (err) {
+        showPopup(toRuError(err.message || "Не удалось оплатить залог"));
+      }
+    });
+  });
 
   const purchaseBtn = document.querySelector(".purchase-property");
   if (purchaseBtn) {
@@ -391,6 +503,78 @@
     skipBtn.addEventListener("click", () => {
       if (purchaseAction) purchaseAction.classList.add("hidden");
       if (endAction) endAction.classList.remove("hidden");
+    });
+  }
+  const payRentBtn = document.querySelector(".pay-rent");
+  if (payRentBtn) {
+    payRentBtn.addEventListener("click", async () => {
+      const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+      try {
+        await postJson("/api/v1/game/" + gameId + "/commands", {
+          action: "pay_rent",
+          as_player_id: actorPlayerId,
+          client_msg_id: "rent_" + Date.now(),
+        });
+        if (rentAction) rentAction.classList.add("hidden");
+        if (endAction) endAction.classList.remove("hidden");
+      } catch (err) {
+        showPopup(toRuError(err.message || "Не удалось оплатить ренту"));
+      }
+    });
+  }
+  const buyoutBtn = document.querySelector(".buyout-property");
+  if (buyoutBtn) {
+    buyoutBtn.addEventListener("click", async () => {
+      const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+      try {
+        await postJson("/api/v1/game/" + gameId + "/commands", {
+          action: "buyout",
+          as_player_id: actorPlayerId,
+          offer_amount: currentBuyoutMin > 0 ? currentBuyoutMin : (currentRentDue * 10),
+          client_msg_id: "buyout_" + Date.now(),
+        });
+        await reloadPropertyState();
+        if (rentAction) rentAction.classList.add("hidden");
+        if (endAction) endAction.classList.remove("hidden");
+      } catch (err) {
+        showPopup(toRuError(err.message || "Не удалось выкупить клетку"));
+      }
+    });
+  }
+  const buildHouseBtn = document.querySelector(".build-house");
+  if (buildHouseBtn) {
+    buildHouseBtn.addEventListener("click", async () => {
+      const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+      try {
+        await postJson("/api/v1/game/" + gameId + "/commands", {
+          action: "build",
+          build_type: "house",
+          as_player_id: actorPlayerId,
+          client_msg_id: "house_" + Date.now(),
+        });
+        await reloadPropertyState();
+        showNotify("Дом построен");
+      } catch (err) {
+        showPopup(toRuError(err.message || "Не удалось построить дом"));
+      }
+    });
+  }
+  const buildHotelBtn = document.querySelector(".build-hotel");
+  if (buildHotelBtn) {
+    buildHotelBtn.addEventListener("click", async () => {
+      const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+      try {
+        await postJson("/api/v1/game/" + gameId + "/commands", {
+          action: "build",
+          build_type: "hotel",
+          as_player_id: actorPlayerId,
+          client_msg_id: "hotel_" + Date.now(),
+        });
+        await reloadPropertyState();
+        showNotify("Отель построен");
+      } catch (err) {
+        showPopup(toRuError(err.message || "Не удалось построить отель"));
+      }
     });
   }
 
@@ -639,18 +823,31 @@
       if (i >= steps.length) return;
       setTokenPosition(playerId, steps[i]);
       i += 1;
-      window.setTimeout(tick, 140);
+      window.setTimeout(tick, 360);
     };
     tick();
   }
 
+  function refreshCurrentPlayerInfo() {
+    const activePlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+    const activePlayer = players.find((p) => Number(p.id || 0) === activePlayerId);
+    const nameEl = document.querySelector("#board-current-player");
+    const cashEl = document.querySelector("#board-current-money");
+    if (nameEl) nameEl.textContent = playerNameById.get(activePlayerId) || "—";
+    if (cashEl) cashEl.textContent = String(Number((activePlayer && activePlayer.cash) || 0));
+  }
+
   function markActiveToken() {
     document.querySelectorAll(".token.active").forEach((el) => el.classList.remove("active"));
+    document.querySelectorAll(".player-chip.is-current").forEach((el) => el.classList.remove("is-current"));
     const activePlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
     const token = document.querySelector(`.token[data-player-id="${activePlayerId}"]`);
     if (token) token.classList.add("active");
+    const chip = document.querySelector(`.player-chip[data-player-id="${activePlayerId}"]`);
+    if (chip) chip.classList.add("is-current");
     const turnLabel = document.querySelector("#turn-player-label");
     if (turnLabel) turnLabel.textContent = playerNameById.get(activePlayerId) || "—";
+    refreshCurrentPlayerInfo();
   }
 
   async function reloadPropertyState() {
@@ -696,13 +893,77 @@
       assets.innerHTML = "";
       const positions = grouped.get(playerId) || [];
       positions.sort((a, b) => a - b).forEach((pos) => {
-        const el = document.createElement("span");
+        const meta = boardMeta[pos] || { name: "#" + String(pos), price: 0, rent: 0, group: 0 };
+        const el = document.createElement("button");
+        el.type = "button";
         el.className = "asset-card";
-        el.textContent = "#" + String(pos);
+        const colorClass = groupColorClass[Number(meta.group || 0)] || "group-0";
+        el.innerHTML = `<span class="asset-card__bar ${colorClass}"></span><span class="asset-card__name">${escapeHtml(meta.name)}</span>`;
+        el.addEventListener("click", () => {
+          openDeedCard(meta);
+        });
         assets.appendChild(el);
       });
     });
     markActiveToken();
+  }
+
+  function openDeedCard(meta) {
+    const wrap = document.querySelector("#tabletop-card-closeup");
+    const title = document.querySelector("#tabletop-card-closeup-title");
+    const body = document.querySelector("#tabletop-card-closeup-body");
+    if (!wrap || !title || !body) {
+      showBoardModal(meta.name, `Цена: ${meta.price}\nРента: ${meta.rent}`);
+      return;
+    }
+    const colorClass = groupColorClass[Number(meta.group || 0)] || "group-0";
+    title.textContent = meta.name;
+    body.innerHTML = `<div class="deed-card"><div class="deed-card__bar ${colorClass}"></div><h4>${escapeHtml(meta.name)}</h4><dl><dt>Цена</dt><dd>${Number(meta.price || 0)}</dd><dt>Рента</dt><dd>${Number(meta.rent || 0)}</dd></dl></div>`;
+    wrap.classList.remove("hidden");
+  }
+
+  const closeupClose = document.querySelector("#tabletop-card-closeup-close");
+  if (closeupClose) {
+    closeupClose.addEventListener("click", () => {
+      const wrap = document.querySelector("#tabletop-card-closeup");
+      if (wrap) wrap.classList.add("hidden");
+    });
+  }
+
+  function showBoardModal(title, text) {
+    const root = document.querySelector("#modal-overlay");
+    if (!root) return;
+    const titleEl = root.querySelector(".modal-title");
+    const contentEl = root.querySelector(".modal-content");
+    if (titleEl) titleEl.textContent = String(title || "Событие");
+    if (contentEl) contentEl.textContent = String(text || "");
+    root.classList.remove("hidden", "hide");
+    root.classList.add("show");
+    const close = root.querySelector(".close");
+    if (close) {
+      close.onclick = () => {
+        root.classList.remove("show");
+        root.classList.add("hide");
+        window.setTimeout(() => root.classList.add("hidden"), 200);
+      };
+    }
+  }
+
+  function showCardModal(title, text) {
+    const root = document.querySelector("#card-overlay");
+    if (!root) return;
+    const titleEl = root.querySelector(".card-title");
+    const contentEl = root.querySelector(".card-content");
+    if (titleEl) titleEl.textContent = String(title || "Карта");
+    if (contentEl) contentEl.textContent = String(text || "");
+    root.classList.remove("hidden", "hide", "in-deck");
+    root.classList.add("show");
+    const closeIt = () => {
+      root.classList.remove("show");
+      root.classList.add("hide");
+      window.setTimeout(() => root.classList.add("hidden"), 240);
+    };
+    root.onclick = closeIt;
   }
 
   refreshFromEvents((() => {
@@ -732,5 +993,6 @@
     });
   }
   renderRightPanel();
+  refreshCurrentPlayerInfo();
   pollLoop();
 })();

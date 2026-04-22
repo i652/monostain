@@ -35,7 +35,7 @@ ob_start();
       <div class="mono-board">
         <div class="mono-board__main">
           <div class="board" id="board">
-            <div class="corner space nw" id="corner-free" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="label">парковка</div></div></div>
+            <div class="corner space nw" id="corner-free" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="symbol parking">🚗</div><div class="label">парковка</div></div></div>
             <div class="row horizontal north">
               <div class="space property" data-group="4" id="prop-kentucky" data-pos="21"><div class="container"><div class="name">Кентукки-авеню</div><div class="cost money">220</div></div></div>
               <div class="space property" data-group="4" id="prop-indiana" data-pos="22"><div class="container"><div class="name">Индиана-авеню</div><div class="cost money">220</div></div></div>
@@ -47,7 +47,7 @@ ob_start();
               <div class="space utility waterworks" data-util="1" id="util-water" data-pos="28"><div class="container"><div class="name">Водоканал</div><div class="cost money">150</div></div></div>
               <div class="space property" data-group="5" id="prop-marvin" data-pos="29"><div class="container"><div class="name">Мэрвин-гарденс</div><div class="cost money">280</div></div></div>
             </div>
-            <div class="corner space ne" id="corner-busted" data-pos="30"><div class="container"><div class="label med go-to">Идите в</div><div class="label med jail">тюрьму</div></div></div>
+            <div class="corner space ne" id="corner-busted" data-pos="30"><div class="container"><div class="label med go-to">Идите в</div><div class="symbol busted">⚖️</div><div class="label med jail">тюрьму</div></div></div>
             <div class="row vertical west">
               <div class="space property" data-group="3" id="prop-newyork" data-pos="19"><div class="container"><div class="name">Нью-Йорк-авеню</div><div class="cost money">200</div></div></div>
               <div class="space property" data-group="3" id="prop-tennessee" data-pos="18"><div class="container"><div class="name">Теннесси-авеню</div><div class="cost money">180</div></div></div>
@@ -63,6 +63,10 @@ ob_start();
               <div class="deck-outline chest"></div>
               <div class="logo">Монополия</div>
               <div class="deck-outline chance"></div>
+              <div class="player-info">
+                <div class="current">Текущий игрок: <span class="value" id="board-current-player">—</span></div>
+                <div class="player-money">Баланс: <span class="money" id="board-current-money">0</span></div>
+              </div>
               <div class="dice">
                 <div class="dice-group">
                   <div class="die left" id="die-1" data-value="0"><div class="pip a"></div><div class="space"></div><div class="pip e"></div><div class="pip b"></div><div class="pip d"></div><div class="pip f"></div><div class="pip c"></div><div class="space"></div><div class="pip g"></div></div>
@@ -79,6 +83,16 @@ ob_start();
                   <button class="purchase-property">Купить <span class="name"></span></button>
                   <div class="or">или</div>
                   <button class="skip-property">Пропустить</button>
+                </div>
+                <div class="action rent hidden">
+                  <div class="full-width">Рента: <strong><span class="money rent-amount">0</span></strong></div>
+                  <button class="pay-rent">Оплатить ренту</button>
+                  <div class="or">или</div>
+                  <button class="buyout-property">Выкупить клетку</button>
+                </div>
+                <div class="action build hidden">
+                  <button class="build-house">Построить дом</button>
+                  <button class="build-hotel">Построить отель</button>
                 </div>
                 <div class="action roll-pay hidden">
                   <button class="roll-dice try-doubles js-game-command" data-action="roll">Бросить кубики</button>
@@ -102,7 +116,7 @@ ob_start();
               <div class="space tax luxury" data-tax="luxury" id="tax-luxury" data-pos="38"><div class="container"><div class="label">Налог на роскошь</div><div class="cost">Плати <div class="money">200</div></div></div></div>
               <div class="space property" data-group="7" id="prop-boardwalk" data-pos="39"><div class="container"><div class="name">Бродвей</div><div class="cost money">400</div></div></div>
             </div>
-            <div class="corner space sw" id="corner-visiting" data-pos="10"><div class="container"><div class="label just">Просто</div><div class="label visiting">в гостях</div></div></div>
+            <div class="corner space sw" id="corner-visiting" data-pos="10"><div class="subcorner"><div class="container"><div class="label in">В</div><div class="window"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="person">😟</div></div><div class="label jail">Тюрьме</div></div></div><div class="label just">Просто</div><div class="label visiting">в гостях</div></div>
             <div class="row horizontal south">
               <div class="space property" data-group="1" id="prop-connecticut" data-pos="9"><div class="container"><div class="name">Коннектикут-авеню</div><div class="cost money">120</div></div></div>
               <div class="space property" data-group="1" id="prop-vermont" data-pos="8"><div class="container"><div class="name">Вермонт-авеню</div><div class="cost money">100</div></div></div>
@@ -114,7 +128,7 @@ ob_start();
               <div class="space deck chest" data-deck="chest" id="chest-1" data-pos="2"><div class="container"><div class="label">Казна</div></div></div>
               <div class="space property" data-group="0" id="prop-mediterranean" data-pos="1"><div class="container"><div class="name">Средиземноморский пр.</div><div class="cost money">60</div></div></div>
             </div>
-            <div class="corner space se" id="corner-go" data-pos="0"><div class="container"><div class="text">Collect <span class="cost money">200</span> salary as you pass</div><div class="go">GO</div></div></div>
+            <div class="corner space se" id="corner-go" data-pos="0"><div class="container"><div class="text">Получите <span class="cost money">200</span> за проход старта</div><div class="go">GO</div></div><div class="symbol arrow">←</div></div>
             <div id="modal-overlay" class="modal-overlay hide hidden"><div class="modal-body type-ok"><button class="close"><span class="sr-only">Close modal</span></button><div class="modal-header"><h5 class="modal-title"></h5></div><div class="modal-content"></div><div class="modal-footer"></div></div></div>
             <div id="card-overlay" class="modal-overlay in-deck hide hidden"><div class="card-body"><div class="card-header"><h5 class="card-title"></h5></div><div class="card-content"></div><div class="card-footer"></div></div></div>
             <div id="space-overlay" class="modal-overlay hide hidden"></div>
@@ -131,6 +145,13 @@ ob_start();
               <div class="player-assets"></div>
             </div>
           <?php endforeach; ?>
+          <div class="tabletop-card-closeup hidden" id="tabletop-card-closeup">
+            <div class="tabletop-card-closeup__head">
+              <strong id="tabletop-card-closeup-title">Карточка</strong>
+              <button type="button" class="tabletop-card-closeup__close" id="tabletop-card-closeup-close" aria-label="Закрыть">✕</button>
+            </div>
+            <div class="tabletop-card-closeup__body" id="tabletop-card-closeup-body"></div>
+          </div>
         </aside>
       </div>
       <div class="chat-box">
@@ -155,7 +176,14 @@ ob_start();
     <section class="game-panel" data-panel="timeline"><div id="timeline-box" class="timeline-box"></div></section>
     <section class="game-panel" data-panel="stats"><div id="stats-box">Статистика игроков обновляется из событий.</div></section>
     <section class="game-panel" data-panel="trade"><div id="trade-box">Модуль сделок: обмен деньгами и собственностью.</div></section>
-    <section class="game-panel" data-panel="rules"><div id="rules-box">Classic rules (MVP+): движение, рента, налоги, тюрьма, ипотека, дома/отели, сделки.</div></section>
+    <section class="game-panel" data-panel="rules"><div id="rules-box">
+      <div class="timeline-row"><span class="timeline-row__actor">Цель</span><span class="timeline-row__text">Разорить соперников и остаться последним платёжеспособным игроком.</span><span class="timeline-row__time">Правила</span></div>
+      <div class="timeline-row"><span class="timeline-row__actor">Ход</span><span class="timeline-row__text">Игрок бросает 2 кубика, двигается, затем выполняет действие клетки.</span><span class="timeline-row__time">Правила</span></div>
+      <div class="timeline-row"><span class="timeline-row__actor">Тюрьма</span><span class="timeline-row__text">До 3 попыток выбросить дубль; можно оплатить залог 50 и продолжить игру.</span><span class="timeline-row__time">Правила</span></div>
+      <div class="timeline-row"><span class="timeline-row__actor">Строительство</span><span class="timeline-row__text">Дома/отели строятся только при полном наборе цвета. Отель доступен после 4 домов.</span><span class="timeline-row__time">Правила</span></div>
+      <div class="timeline-row"><span class="timeline-row__actor">Рента</span><span class="timeline-row__text">На чужой клетке рента оплачивается кнопкой «Оплатить ренту».</span><span class="timeline-row__time">Правила</span></div>
+      <div class="timeline-row"><span class="timeline-row__actor">Ваша корректировка</span><span class="timeline-row__text">Вместо ренты можно выкупить клетку: сумма не меньше (цена клетки + стоимость построек) × 2.</span><span class="timeline-row__time">Monostain</span></div>
+    </div></section>
     <section class="game-panel" data-panel="history"><div id="history-box" class="timeline-box"></div></section>
   </div>
 </section>

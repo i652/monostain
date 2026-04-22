@@ -299,6 +299,21 @@ final class GameRepository
         $stmt->execute();
     }
 
+    public function updatePropertyBuildings(string $gameId, int $position, int $houses, bool $hasHotel): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO game_property_state (game_id, cell_position, owner_player_id, houses, has_hotel, mortgaged)
+             VALUES (:game_id, :pos, NULL, :houses, :has_hotel, FALSE)
+             ON CONFLICT (game_id, cell_position)
+             DO UPDATE SET houses = EXCLUDED.houses, has_hotel = EXCLUDED.has_hotel, updated_at = NOW()'
+        );
+        $stmt->bindValue(':game_id', $gameId);
+        $stmt->bindValue(':pos', $position, PDO::PARAM_INT);
+        $stmt->bindValue(':houses', $houses, PDO::PARAM_INT);
+        $stmt->bindValue(':has_hotel', $hasHotel, PDO::PARAM_BOOL);
+        $stmt->execute();
+    }
+
     public function listPropertyStates(string $gameId): array
     {
         $stmt = $this->pdo->prepare(

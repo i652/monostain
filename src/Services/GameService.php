@@ -8,48 +8,50 @@ use Stain\Repositories\UserRepository;
 
 final class GameService
 {
-    /** @var array<int, array{type:string,name:string,price?:int,rent?:int,tax?:int}> */
+    private const BAIL_AMOUNT = 50;
+    private const MAX_JAIL_TRIES = 3;
+    /** @var array<int, array{type:string,name:string,price?:int,rent?:int,tax?:int,group?:int,building_cost?:int}> */
     private const BOARD = [
         0 => ['type' => 'go', 'name' => 'Старт'],
-        1 => ['type' => 'property', 'name' => 'Средиземноморский пр.', 'price' => 60, 'rent' => 2],
+        1 => ['type' => 'property', 'name' => 'Средиземноморский пр.', 'price' => 60, 'rent' => 2, 'group' => 0, 'building_cost' => 50],
         2 => ['type' => 'chest', 'name' => 'Казна'],
-        3 => ['type' => 'property', 'name' => 'Балтик-авеню', 'price' => 60, 'rent' => 4],
+        3 => ['type' => 'property', 'name' => 'Балтик-авеню', 'price' => 60, 'rent' => 4, 'group' => 0, 'building_cost' => 50],
         4 => ['type' => 'tax', 'name' => 'Подоходный налог', 'tax' => 200],
         5 => ['type' => 'railroad', 'name' => 'Читающая Ж/Д', 'price' => 200, 'rent' => 25],
-        6 => ['type' => 'property', 'name' => 'Ориентал-авеню', 'price' => 100, 'rent' => 6],
+        6 => ['type' => 'property', 'name' => 'Ориентал-авеню', 'price' => 100, 'rent' => 6, 'group' => 1, 'building_cost' => 50],
         7 => ['type' => 'chance', 'name' => 'Шанс'],
-        8 => ['type' => 'property', 'name' => 'Вермонт-авеню', 'price' => 100, 'rent' => 6],
-        9 => ['type' => 'property', 'name' => 'Коннектикут-авеню', 'price' => 120, 'rent' => 8],
+        8 => ['type' => 'property', 'name' => 'Вермонт-авеню', 'price' => 100, 'rent' => 6, 'group' => 1, 'building_cost' => 50],
+        9 => ['type' => 'property', 'name' => 'Коннектикут-авеню', 'price' => 120, 'rent' => 8, 'group' => 1, 'building_cost' => 50],
         10 => ['type' => 'jail', 'name' => 'Тюрьма'],
-        11 => ['type' => 'property', 'name' => 'Сент-Чарльз-плейс', 'price' => 140, 'rent' => 10],
+        11 => ['type' => 'property', 'name' => 'Сент-Чарльз-плейс', 'price' => 140, 'rent' => 10, 'group' => 2, 'building_cost' => 100],
         12 => ['type' => 'utility', 'name' => 'Электрокомпания', 'price' => 150, 'rent' => 10],
-        13 => ['type' => 'property', 'name' => 'Стейтс-авеню', 'price' => 140, 'rent' => 10],
-        14 => ['type' => 'property', 'name' => 'Вирджиния-авеню', 'price' => 160, 'rent' => 12],
+        13 => ['type' => 'property', 'name' => 'Стейтс-авеню', 'price' => 140, 'rent' => 10, 'group' => 2, 'building_cost' => 100],
+        14 => ['type' => 'property', 'name' => 'Вирджиния-авеню', 'price' => 160, 'rent' => 12, 'group' => 2, 'building_cost' => 100],
         15 => ['type' => 'railroad', 'name' => 'Пенсильвания Ж/Д', 'price' => 200, 'rent' => 25],
-        16 => ['type' => 'property', 'name' => 'Сент-Джеймс-плейс', 'price' => 180, 'rent' => 14],
+        16 => ['type' => 'property', 'name' => 'Сент-Джеймс-плейс', 'price' => 180, 'rent' => 14, 'group' => 3, 'building_cost' => 100],
         17 => ['type' => 'chest', 'name' => 'Казна'],
-        18 => ['type' => 'property', 'name' => 'Теннесси-авеню', 'price' => 180, 'rent' => 14],
-        19 => ['type' => 'property', 'name' => 'Нью-Йорк-авеню', 'price' => 200, 'rent' => 16],
+        18 => ['type' => 'property', 'name' => 'Теннесси-авеню', 'price' => 180, 'rent' => 14, 'group' => 3, 'building_cost' => 100],
+        19 => ['type' => 'property', 'name' => 'Нью-Йорк-авеню', 'price' => 200, 'rent' => 16, 'group' => 3, 'building_cost' => 100],
         20 => ['type' => 'free', 'name' => 'Бесплатная парковка'],
-        21 => ['type' => 'property', 'name' => 'Кентукки-авеню', 'price' => 220, 'rent' => 18],
-        22 => ['type' => 'property', 'name' => 'Индиана-авеню', 'price' => 220, 'rent' => 18],
+        21 => ['type' => 'property', 'name' => 'Кентукки-авеню', 'price' => 220, 'rent' => 18, 'group' => 4, 'building_cost' => 150],
+        22 => ['type' => 'property', 'name' => 'Индиана-авеню', 'price' => 220, 'rent' => 18, 'group' => 4, 'building_cost' => 150],
         23 => ['type' => 'chance', 'name' => 'Шанс'],
-        24 => ['type' => 'property', 'name' => 'Иллинойс-авеню', 'price' => 240, 'rent' => 20],
+        24 => ['type' => 'property', 'name' => 'Иллинойс-авеню', 'price' => 240, 'rent' => 20, 'group' => 4, 'building_cost' => 150],
         25 => ['type' => 'railroad', 'name' => 'Ж/д B&O', 'price' => 200, 'rent' => 25],
-        26 => ['type' => 'property', 'name' => 'Атлантик-авеню', 'price' => 260, 'rent' => 22],
-        27 => ['type' => 'property', 'name' => 'Вентнор-авеню', 'price' => 260, 'rent' => 22],
+        26 => ['type' => 'property', 'name' => 'Атлантик-авеню', 'price' => 260, 'rent' => 22, 'group' => 5, 'building_cost' => 150],
+        27 => ['type' => 'property', 'name' => 'Вентнор-авеню', 'price' => 260, 'rent' => 22, 'group' => 5, 'building_cost' => 150],
         28 => ['type' => 'utility', 'name' => 'Водоканал', 'price' => 150, 'rent' => 10],
-        29 => ['type' => 'property', 'name' => 'Мэрвин-гарденс', 'price' => 280, 'rent' => 24],
+        29 => ['type' => 'property', 'name' => 'Мэрвин-гарденс', 'price' => 280, 'rent' => 24, 'group' => 5, 'building_cost' => 150],
         30 => ['type' => 'go_to_jail', 'name' => 'Идите в тюрьму'],
-        31 => ['type' => 'property', 'name' => 'Пасифик-авеню', 'price' => 300, 'rent' => 26],
-        32 => ['type' => 'property', 'name' => 'Сев. Каролина-авеню', 'price' => 300, 'rent' => 26],
+        31 => ['type' => 'property', 'name' => 'Пасифик-авеню', 'price' => 300, 'rent' => 26, 'group' => 6, 'building_cost' => 200],
+        32 => ['type' => 'property', 'name' => 'Сев. Каролина-авеню', 'price' => 300, 'rent' => 26, 'group' => 6, 'building_cost' => 200],
         33 => ['type' => 'chest', 'name' => 'Казна'],
-        34 => ['type' => 'property', 'name' => 'Пенсильвания-авеню', 'price' => 320, 'rent' => 28],
+        34 => ['type' => 'property', 'name' => 'Пенсильвания-авеню', 'price' => 320, 'rent' => 28, 'group' => 6, 'building_cost' => 200],
         35 => ['type' => 'railroad', 'name' => 'Короткая линия', 'price' => 200, 'rent' => 25],
         36 => ['type' => 'chance', 'name' => 'Шанс'],
-        37 => ['type' => 'property', 'name' => 'Парк-плейс', 'price' => 350, 'rent' => 35],
+        37 => ['type' => 'property', 'name' => 'Парк-плейс', 'price' => 350, 'rent' => 35, 'group' => 7, 'building_cost' => 200],
         38 => ['type' => 'tax', 'name' => 'Налог на роскошь', 'tax' => 100],
-        39 => ['type' => 'property', 'name' => 'Бродвей', 'price' => 400, 'rent' => 50],
+        39 => ['type' => 'property', 'name' => 'Бродвей', 'price' => 400, 'rent' => 50, 'group' => 7, 'building_cost' => 200],
     ];
     public function __construct(
         private readonly GameRepository $games,
@@ -267,16 +269,54 @@ final class GameService
                 $oldPos = (int) $player['position'];
                 $inJail = $this->normalizeBool($player['in_jail'] ?? false);
                 $jailTurns = (int) $player['jail_turns'];
+                $cash = (int) $player['cash'];
+                $newPos = $oldPos;
                 if ($inJail && $d1 !== $d2) {
                     $jailTurns++;
-                    $payload = ['dice' => [$d1, $d2], 'position' => (int) $player['position'], 'from_position' => $oldPos, 'cash' => (int) $player['cash'], 'still_in_jail' => true];
-                    $this->games->updatePlayerState((int) $player['id'], (int) $player['cash'], (int) $player['position'], true, $jailTurns);
+                    if ($jailTurns >= self::MAX_JAIL_TRIES) {
+                        $cash -= self::BAIL_AMOUNT;
+                        $inJail = false;
+                        $jailTurns = 0;
+                        $move = $d1 + $d2;
+                        $newPos = ($oldPos + $move) % 40;
+                        if (($oldPos + $move) >= 40) {
+                            $cash += 200;
+                        }
+                        $landing = $this->resolveLanding($gameId, $player, $newPos, $cash);
+                        $newPos = $landing['position'];
+                        $cash = $landing['cash'];
+                        $inJail = $landing['in_jail'];
+                        $jailTurns = $landing['jail_turns'];
+                        $payload = array_merge([
+                            'dice' => [$d1, $d2],
+                            'from_position' => $oldPos,
+                            'position' => $newPos,
+                            'cash' => $cash,
+                            'bail_paid' => self::BAIL_AMOUNT,
+                            'forced_bail' => true,
+                        ], $landing['payload']);
+                        $this->games->updatePlayerState((int) $player['id'], $cash, $newPos, $inJail, $jailTurns);
+                        break;
+                    }
+                    $payload = [
+                        'dice' => [$d1, $d2],
+                        'position' => $oldPos,
+                        'from_position' => $oldPos,
+                        'cash' => $cash,
+                        'still_in_jail' => true,
+                        'jail_tries_left' => self::MAX_JAIL_TRIES - $jailTurns,
+                    ];
+                    $this->games->updatePlayerState((int) $player['id'], $cash, $oldPos, true, $jailTurns);
                     break;
                 }
+                if ($inJail && $d1 === $d2) {
+                    $inJail = false;
+                    $jailTurns = 0;
+                    $payload['jail_freed_by_doubles'] = true;
+                }
                 $move = $d1 + $d2;
-                $newPos = (((int) $player['position']) + $move) % 40;
-                $cash = (int) $player['cash'];
-                if ((((int) $player['position']) + $move) >= 40) {
+                $newPos = ($oldPos + $move) % 40;
+                if (($oldPos + $move) >= 40) {
                     $cash += 200;
                 }
                 $jailNow = false;
@@ -358,6 +398,111 @@ final class GameService
                 $this->games->upsertPropertyOwner($gameId, $position, (int) $player['id']);
                 $payload = ['buyer_player_id' => (int) $player['id'], 'position' => $position, 'price' => $price, 'cash' => $cash];
                 break;
+            case 'pay_rent':
+                $position = (int) $player['position'];
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
+                    throw new \InvalidArgumentException('На этой клетке нет ренты');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                $ownerPlayerId = (int) ($prop['owner_player_id'] ?? 0);
+                if ($ownerPlayerId <= 0 || $ownerPlayerId === (int) $player['id']) {
+                    throw new \InvalidArgumentException('Рента не требуется');
+                }
+                $owner = null;
+                foreach ($allPlayers as $p) {
+                    if ((int) $p['id'] === $ownerPlayerId) {
+                        $owner = $p;
+                        break;
+                    }
+                }
+                if ($owner === null) {
+                    throw new \InvalidArgumentException('Владелец клетки не найден');
+                }
+                $rent = $this->calculateRent($space, $prop);
+                $payerCash = (int) $player['cash'] - $rent;
+                $ownerCash = (int) $owner['cash'] + $rent;
+                $this->games->updatePlayerState((int) $player['id'], $payerCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $this->games->updatePlayerState((int) $owner['id'], $ownerCash, (int) $owner['position'], $this->normalizeBool($owner['in_jail'] ?? false), (int) $owner['jail_turns']);
+                $payload = ['position' => $position, 'to_player_id' => $ownerPlayerId, 'rent_paid' => $rent, 'cash' => $payerCash];
+                break;
+            case 'buyout':
+                $position = (int) $player['position'];
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
+                    throw new \InvalidArgumentException('Эту клетку нельзя выкупить');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                $ownerPlayerId = (int) ($prop['owner_player_id'] ?? 0);
+                if ($ownerPlayerId <= 0 || $ownerPlayerId === (int) $player['id']) {
+                    throw new \InvalidArgumentException('Эта клетка не принадлежит другому игроку');
+                }
+                $owner = null;
+                foreach ($allPlayers as $p) {
+                    if ((int) $p['id'] === $ownerPlayerId) {
+                        $owner = $p;
+                        break;
+                    }
+                }
+                if ($owner === null) {
+                    throw new \InvalidArgumentException('Владелец клетки не найден');
+                }
+                $offered = (int) ($data['offer_amount'] ?? 0);
+                $buildingCost = (int) ($space['building_cost'] ?? 0);
+                $houses = (int) ($prop['houses'] ?? 0);
+                $hasHotel = $this->normalizeBool($prop['has_hotel'] ?? false);
+                $buildingValue = $buildingCost * ($houses + ($hasHotel ? 5 : 0));
+                $minOffer = (((int) ($space['price'] ?? 0)) + $buildingValue) * 2;
+                if ($offered < $minOffer) {
+                    throw new \InvalidArgumentException('Сумма выкупа меньше допустимого минимума');
+                }
+                if ((int) $player['cash'] < $offered) {
+                    throw new \InvalidArgumentException('Недостаточно средств для выкупа');
+                }
+                $buyerCash = (int) $player['cash'] - $offered;
+                $ownerCash = (int) $owner['cash'] + $offered;
+                $this->games->updatePlayerState((int) $player['id'], $buyerCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $this->games->updatePlayerState((int) $owner['id'], $ownerCash, (int) $owner['position'], $this->normalizeBool($owner['in_jail'] ?? false), (int) $owner['jail_turns']);
+                $this->games->upsertPropertyOwner($gameId, $position, (int) $player['id']);
+                $payload = ['position' => $position, 'offer_amount' => $offered, 'seller_player_id' => $ownerPlayerId, 'buyer_player_id' => (int) $player['id'], 'cash' => $buyerCash];
+                break;
+            case 'build':
+                $position = (int) ($data['position'] ?? $player['position']);
+                $buildType = (string) ($data['build_type'] ?? 'house');
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (($space['type'] ?? '') !== 'property') {
+                    throw new \InvalidArgumentException('Строительство доступно только на улицах');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                if ($prop === null || (int) ($prop['owner_player_id'] ?? 0) !== (int) $player['id']) {
+                    throw new \InvalidArgumentException('Вы не владелец этой клетки');
+                }
+                if (!$this->ownsWholeGroup($gameId, (int) $player['id'], (int) ($space['group'] ?? -1))) {
+                    throw new \InvalidArgumentException('Строительство возможно только при полном наборе группы');
+                }
+                $houses = (int) ($prop['houses'] ?? 0);
+                $hasHotel = $this->normalizeBool($prop['has_hotel'] ?? false);
+                $cost = (int) ($space['building_cost'] ?? 0);
+                $cash = (int) $player['cash'];
+                if ($cash < $cost) {
+                    throw new \InvalidArgumentException('Недостаточно средств для строительства');
+                }
+                if ($buildType === 'house') {
+                    if ($hasHotel || $houses >= 4) {
+                        throw new \InvalidArgumentException('Нельзя добавить дом');
+                    }
+                    $houses++;
+                } else {
+                    if ($hasHotel || $houses < 4) {
+                        throw new \InvalidArgumentException('Отель строится только после 4 домов');
+                    }
+                    $hasHotel = true;
+                }
+                $cash -= $cost;
+                $this->games->updatePropertyBuildings($gameId, $position, $houses, $hasHotel);
+                $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $payload = ['position' => $position, 'build_type' => $buildType, 'houses' => $houses, 'has_hotel' => $hasHotel, 'build_cost' => $cost, 'cash' => $cash];
+                break;
             case 'sell':
                 $position = (int) $player['position'];
                 $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
@@ -379,6 +524,25 @@ final class GameService
                 );
                 $this->games->upsertPropertyOwner($gameId, $position, null);
                 $payload = ['seller_player_id' => (int) $player['id'], 'position' => $position, 'price' => $price, 'cash' => $cash];
+                break;
+            case 'pay_bail':
+                if (!$this->normalizeBool($player['in_jail'] ?? false)) {
+                    throw new \InvalidArgumentException('Игрок не находится в тюрьме');
+                }
+                $cash = (int) $player['cash'] - self::BAIL_AMOUNT;
+                $this->games->updatePlayerState(
+                    (int) $player['id'],
+                    $cash,
+                    (int) $player['position'],
+                    false,
+                    0
+                );
+                $payload = [
+                    'bail_paid' => self::BAIL_AMOUNT,
+                    'position' => (int) $player['position'],
+                    'cash' => $cash,
+                    'can_roll' => true,
+                ];
                 break;
             case 'trade':
                 $payload = ['initiator_player_id' => (int) $player['id']];
@@ -479,8 +643,11 @@ final class GameService
     }
 
     /** @return array{position:int,cash:int,in_jail:bool,jail_turns:int,payload:array} */
-    private function resolveLanding(string $gameId, array $player, int $position, int $cash): array
+    private function resolveLanding(string $gameId, array $player, int $position, int $cash, int $depth = 0): array
     {
+        if ($depth > 3) {
+            return ['position' => $position, 'cash' => $cash, 'in_jail' => false, 'jail_turns' => 0, 'payload' => []];
+        }
         $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
         $payload = ['space_type' => $space['type'], 'space_name' => $space['name']];
         $inJail = false;
@@ -500,44 +667,189 @@ final class GameService
                 $payload['offer_purchase'] = true;
                 $payload['price'] = (int) ($space['price'] ?? 0);
             } elseif ($ownerPlayerId !== (int) $player['id']) {
-                $rent = (int) ($space['rent'] ?? 0);
-                $cash -= $rent;
-                $all = $this->games->listPlayers($gameId);
-                foreach ($all as $p) {
-                    if ((int) $p['id'] !== $ownerPlayerId) {
-                        continue;
-                    }
-                    $ownerCash = (int) $p['cash'] + $rent;
-                    $this->games->updatePlayerState(
-                        (int) $p['id'],
-                        $ownerCash,
-                        (int) $p['position'],
-                        $this->normalizeBool($p['in_jail'] ?? false),
-                        (int) $p['jail_turns']
-                    );
-                    break;
-                }
-                $payload['rent_paid'] = $rent;
+                $rent = $this->calculateRent($space, $state);
+                $buildingCost = (int) ($space['building_cost'] ?? 0);
+                $houses = (int) ($state['houses'] ?? 0);
+                $hasHotel = $this->normalizeBool($state['has_hotel'] ?? false);
+                $minBuyout = (((int) ($space['price'] ?? 0)) + ($buildingCost * ($houses + ($hasHotel ? 5 : 0)))) * 2;
+                $payload['rent_due'] = $rent;
                 $payload['to_player_id'] = $ownerPlayerId;
+                $payload['buyout_min'] = $minBuyout;
+                $payload['owner_player_id'] = $ownerPlayerId;
+            } elseif (($space['type'] ?? '') === 'property') {
+                $payload['can_build'] = true;
+                $payload['building_cost'] = (int) ($space['building_cost'] ?? 0);
             }
         } elseif (in_array(($space['type'] ?? ''), ['chance', 'chest'], true)) {
-            $card = random_int(1, 4);
-            if ($card === 1) {
-                $cash += 50;
-                $payload['card'] = 'Банк выплачивает дивиденд 50';
-            } elseif ($card === 2) {
-                $cash -= 50;
-                $payload['card'] = 'Оплатите сбор 50';
-            } elseif ($card === 3) {
-                $position = 0;
-                $cash += 200;
-                $payload['card'] = 'Перейдите на старт и получите 200';
-            } else {
-                $position = 10;
-                $inJail = true;
-                $payload['card'] = 'Отправляйтесь в тюрьму';
+            $cardResult = $this->applyDeckCard($gameId, $player, (string) $space['type'], $position, $cash);
+            $position = $cardResult['position'];
+            $cash = $cardResult['cash'];
+            $inJail = $cardResult['in_jail'];
+            $jailTurns = $cardResult['jail_turns'];
+            $payload['card'] = $cardResult['card'];
+            if ($position !== (int) ($cardResult['source_position'] ?? $position) && !$inJail) {
+                $next = $this->resolveLanding($gameId, $player, $position, $cash, $depth + 1);
+                $position = $next['position'];
+                $cash = $next['cash'];
+                $inJail = $next['in_jail'];
+                $jailTurns = $next['jail_turns'];
+                $payload = array_merge($payload, $next['payload']);
+            }
+            foreach ($cardResult['payload'] as $k => $v) {
+                $payload[$k] = $v;
             }
         }
         return ['position' => $position, 'cash' => $cash, 'in_jail' => $inJail, 'jail_turns' => $jailTurns, 'payload' => $payload];
+    }
+
+    /** @return array{position:int,cash:int,in_jail:bool,jail_turns:int,card:string,source_position:int,payload:array} */
+    private function applyDeckCard(string $gameId, array $player, string $deckType, int $position, int $cash): array
+    {
+        $allPlayers = $this->games->listPlayers($gameId);
+        $card = '';
+        $payload = [];
+        $inJail = false;
+        $jailTurns = 0;
+        $sourcePosition = $position;
+        if ($deckType === 'chance') {
+            $cards = [
+                ['label' => 'Перейдите на Бродвей', 'type' => 'move_to', 'to' => 39],
+                ['label' => 'Перейдите на старт (получите 200)', 'type' => 'move_to', 'to' => 0],
+                ['label' => 'Перейдите на Иллинойс-авеню', 'type' => 'move_to', 'to' => 24],
+                ['label' => 'Перейдите на Сент-Чарльз-плейс', 'type' => 'move_to', 'to' => 11],
+                ['label' => 'Ближайшая железная дорога', 'type' => 'nearest_railroad'],
+                ['label' => 'Ближайшая коммунальная служба', 'type' => 'nearest_utility'],
+                ['label' => 'Банк выплатил дивиденд 50', 'type' => 'money', 'amount' => 50],
+                ['label' => 'Вернитесь на 3 клетки назад', 'type' => 'move_by', 'delta' => -3],
+                ['label' => 'Штраф за превышение скорости 15', 'type' => 'money', 'amount' => -15],
+                ['label' => 'Поездка до Читающей Ж/Д', 'type' => 'move_to', 'to' => 5],
+                ['label' => 'Кредит на строительство 150', 'type' => 'money', 'amount' => 150],
+                ['label' => 'Идите в тюрьму', 'type' => 'go_jail'],
+            ];
+        } else {
+            $cards = [
+                ['label' => 'Перейдите на старт (получите 200)', 'type' => 'move_to', 'to' => 0],
+                ['label' => 'Ошибка банка в вашу пользу. Получите 200', 'type' => 'money', 'amount' => 200],
+                ['label' => 'Оплатите услуги врача 50', 'type' => 'money', 'amount' => -50],
+                ['label' => 'Продажа акций: получите 50', 'type' => 'money', 'amount' => 50],
+                ['label' => 'Фонд отпуска созрел: получите 100', 'type' => 'money', 'amount' => 100],
+                ['label' => 'Возврат подоходного налога: получите 20', 'type' => 'money', 'amount' => 20],
+                ['label' => 'Вам начислено наследство 100', 'type' => 'money', 'amount' => 100],
+                ['label' => 'Праздничный взнос: получите по 10 с каждого', 'type' => 'collect_from_players', 'amount' => 10],
+                ['label' => 'Оплатите больничный сбор 100', 'type' => 'money', 'amount' => -100],
+                ['label' => 'Оплатите школьный сбор 50', 'type' => 'money', 'amount' => -50],
+                ['label' => 'Идите в тюрьму', 'type' => 'go_jail'],
+            ];
+        }
+        $drawn = $cards[array_rand($cards)];
+        $card = (string) ($drawn['label'] ?? '');
+        $type = (string) ($drawn['type'] ?? 'money');
+        if ($type === 'money') {
+            $cash += (int) ($drawn['amount'] ?? 0);
+        } elseif ($type === 'move_to') {
+            $to = (int) ($drawn['to'] ?? $position);
+            if ($to < $position) {
+                $cash += 200;
+            }
+            $position = $to;
+            $payload['moved_by_card'] = true;
+        } elseif ($type === 'move_by') {
+            $delta = (int) ($drawn['delta'] ?? 0);
+            $position = ($position + $delta + 40) % 40;
+            $payload['moved_by_card'] = true;
+        } elseif ($type === 'nearest_railroad') {
+            $targets = [5, 15, 25, 35];
+            foreach ($targets as $target) {
+                if ($target > $position) {
+                    $position = $target;
+                    $payload['moved_by_card'] = true;
+                    break;
+                }
+            }
+            if (!isset($payload['moved_by_card'])) {
+                $position = 5;
+                $cash += 200;
+                $payload['moved_by_card'] = true;
+            }
+        } elseif ($type === 'nearest_utility') {
+            $targets = [12, 28];
+            $position = $position < 12 ? 12 : 28;
+            if ($sourcePosition >= 28) {
+                $position = 12;
+                $cash += 200;
+            }
+            $payload['moved_by_card'] = true;
+        } elseif ($type === 'collect_from_players') {
+            $amount = (int) ($drawn['amount'] ?? 0);
+            foreach ($allPlayers as $p) {
+                if ((int) $p['id'] === (int) $player['id']) {
+                    continue;
+                }
+                $otherCash = (int) $p['cash'] - $amount;
+                $this->games->updatePlayerState(
+                    (int) $p['id'],
+                    $otherCash,
+                    (int) $p['position'],
+                    $this->normalizeBool($p['in_jail'] ?? false),
+                    (int) $p['jail_turns']
+                );
+                $cash += $amount;
+            }
+            $payload['money_from_players'] = true;
+        } elseif ($type === 'go_jail') {
+            $position = 10;
+            $inJail = true;
+            $jailTurns = 0;
+            $payload['sent_to_jail'] = true;
+        }
+        return [
+            'position' => $position,
+            'cash' => $cash,
+            'in_jail' => $inJail,
+            'jail_turns' => $jailTurns,
+            'card' => $card,
+            'source_position' => $sourcePosition,
+            'payload' => $payload,
+        ];
+    }
+
+    private function calculateRent(array $space, ?array $propState): int
+    {
+        $base = (int) ($space['rent'] ?? 0);
+        if (($space['type'] ?? '') !== 'property') {
+            return $base;
+        }
+        $houses = (int) (($propState['houses'] ?? 0));
+        $hasHotel = $this->normalizeBool($propState['has_hotel'] ?? false);
+        if ($hasHotel) {
+            return $base * 25;
+        }
+        if ($houses > 0) {
+            return $base * (1 + ($houses * 2));
+        }
+        return $base;
+    }
+
+    private function ownsWholeGroup(string $gameId, int $playerId, int $groupId): bool
+    {
+        if ($groupId < 0) {
+            return false;
+        }
+        $groupPositions = [];
+        foreach (self::BOARD as $pos => $space) {
+            if (($space['type'] ?? '') === 'property' && (int) ($space['group'] ?? -1) === $groupId) {
+                $groupPositions[] = $pos;
+            }
+        }
+        if ($groupPositions === []) {
+            return false;
+        }
+        foreach ($groupPositions as $pos) {
+            $state = $this->games->findPropertyState($gameId, $pos);
+            if ((int) ($state['owner_player_id'] ?? 0) !== $playerId) {
+                return false;
+            }
+        }
+        return true;
     }
 }
