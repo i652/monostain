@@ -12,7 +12,6 @@ ob_start();
       <div class="panel-list">
       <?php foreach ($invites as $invite): ?>
         <div class="panel-list-item">
-          <div><strong><?= htmlspecialchars((string) ($invite['game_title'] ?? 'Игра'), ENT_QUOTES, 'UTF-8') ?></strong></div>
           <div class="meta">Токен: <code><?= htmlspecialchars((string) $invite['token'], ENT_QUOTES, 'UTF-8') ?></code></div>
           <button class="btn btn-outline js-accept-invite" data-token="<?= htmlspecialchars((string) $invite['token'], ENT_QUOTES, 'UTF-8') ?>">Принять</button>
         </div>

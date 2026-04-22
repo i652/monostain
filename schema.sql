@@ -120,7 +120,6 @@ CREATE TABLE IF NOT EXISTS games (
   created_by BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   board_template_id BIGINT,
   status VARCHAR(20) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'finished', 'cancelled')),
-  title VARCHAR(120) NOT NULL DEFAULT 'Monopoly game',
   max_players SMALLINT NOT NULL DEFAULT 8 CHECK (max_players BETWEEN 1 AND 8),
   allow_bots BOOLEAN NOT NULL DEFAULT TRUE,
   winner_player_id BIGINT,
@@ -132,6 +131,7 @@ CREATE TABLE IF NOT EXISTS games (
 
 ALTER TABLE games DROP CONSTRAINT IF EXISTS games_max_players_check;
 ALTER TABLE games ADD CONSTRAINT games_max_players_check CHECK (max_players BETWEEN 1 AND 8);
+ALTER TABLE games DROP COLUMN IF EXISTS title;
 
 CREATE TABLE IF NOT EXISTS game_players (
   id BIGSERIAL PRIMARY KEY,

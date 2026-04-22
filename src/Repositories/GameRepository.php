@@ -9,16 +9,15 @@ final class GameRepository
 {
     public function __construct(private readonly PDO $pdo) {}
 
-    public function createGame(string $gameId, int $createdBy, string $title, int $maxPlayers, bool $allowBots): array
+    public function createGame(string $gameId, int $createdBy, int $maxPlayers, bool $allowBots): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO games (id, created_by, title, max_players, allow_bots, status)
-             VALUES (:id, :created_by, :title, :max_players, :allow_bots, :status)
+            'INSERT INTO games (id, created_by, max_players, allow_bots, status)
+             VALUES (:id, :created_by, :max_players, :allow_bots, :status)
              RETURNING *'
         );
         $stmt->bindValue(':id', $gameId);
         $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
-        $stmt->bindValue(':title', $title);
         $stmt->bindValue(':max_players', $maxPlayers, PDO::PARAM_INT);
         $stmt->bindValue(':allow_bots', $allowBots, PDO::PARAM_BOOL);
         $stmt->bindValue(':status', 'waiting');
@@ -133,9 +132,8 @@ final class GameRepository
     public function listActiveInvitesForUser(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT i.*, g.title AS game_title
+            'SELECT i.*
              FROM game_invites i
-             JOIN games g ON g.id = i.game_id
              WHERE i.invited_user_id = :uid AND i.status = :status
              ORDER BY i.created_at DESC'
         );
@@ -259,7 +257,7 @@ final class GameRepository
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        return array_reverse($stmt->fetchAll() ?: []);
+        return $stmt->fetchAll() ?: [];
     }
 
     public function updatePlayerState(int $playerId, int $cash, int $position, bool $inJail, int $jailTurns): void
@@ -275,6 +273,43 @@ final class GameRepository
         $stmt->bindValue(':in_jail', $inJail, PDO::PARAM_BOOL);
         $stmt->bindValue(':jail_turns', $jailTurns, PDO::PARAM_INT);
         $stmt->execute();
+    }
+
+    public function findPropertyState(string $gameId, int $position): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM game_property_state WHERE game_id = :game_id AND cell_position = :pos LIMIT 1'
+        );
+        $stmt->execute(['game_id' => $gameId, 'pos' => $position]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public function upsertPropertyOwner(string $gameId, int $position, ?int $ownerPlayerId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO game_property_state (game_id, cell_position, owner_player_id, houses, has_hotel, mortgaged)
+             VALUES (:game_id, :pos, :owner, 0, FALSE, FALSE)
+             ON CONFLICT (game_id, cell_position)
+             DO UPDATE SET owner_player_id = EXCLUDED.owner_player_id, updated_at = NOW()'
+        );
+        $stmt->bindValue(':game_id', $gameId);
+        $stmt->bindValue(':pos', $position, PDO::PARAM_INT);
+        $stmt->bindValue(':owner', $ownerPlayerId, $ownerPlayerId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    public function listPropertyStates(string $gameId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT ps.*, gp.nickname_snapshot AS owner_name
+             FROM game_property_state ps
+             LEFT JOIN game_players gp ON gp.id = ps.owner_player_id
+             WHERE ps.game_id = :game_id
+             ORDER BY ps.cell_position ASC'
+        );
+        $stmt->execute(['game_id' => $gameId]);
+        return $stmt->fetchAll() ?: [];
     }
 
     public function touchGame(string $gameId): void

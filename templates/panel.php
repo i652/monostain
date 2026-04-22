@@ -2,6 +2,22 @@
 declare(strict_types=1);
 $canonical = rtrim(\Stain\Config::get('APP_URL', 'http://localhost:8080'), '/') . '/panel/posts';
 ob_start();
+$formatRuDate = static function (string $raw): string {
+  try {
+    $d = new DateTimeImmutable($raw);
+  } catch (Throwable) {
+    return $raw;
+  }
+  $now = new DateTimeImmutable('now');
+  $months = [1 => 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  $day = (int) $d->format('j');
+  $month = $months[(int) $d->format('n')] ?? $d->format('m');
+  $time = $d->format('H:i');
+  if ($d->format('Y') === $now->format('Y')) {
+    return $day . ' ' . $month . ' в ' . $time;
+  }
+  return $day . ' ' . $month . ' ' . $d->format('Y') . ' года в ' . $time;
+};
 ?>
 <section class="panel-grid">
   <h1>Панель управления</h1>
@@ -55,11 +71,10 @@ ob_start();
       <div class="panel-list">
       <?php foreach (($gamesDashboard['today_games'] ?? []) as $g): ?>
         <div class="panel-list-item">
-          <div><strong><?= htmlspecialchars((string) ($g['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong></div>
           <div class="meta">
             ID: <?= htmlspecialchars((string) ($g['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
             Создал: <?= htmlspecialchars((string) ($g['creator_nickname'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
-            <?= htmlspecialchars((string) ($g['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+            <?= htmlspecialchars($formatRuDate((string) ($g['created_at'] ?? '')), ENT_QUOTES, 'UTF-8') ?>
           </div>
         </div>
       <?php endforeach; ?>
@@ -69,11 +84,10 @@ ob_start();
       <div class="panel-list">
       <?php foreach (($gamesDashboard['all_games'] ?? []) as $g): ?>
         <div class="panel-list-item">
-          <div><strong><?= htmlspecialchars((string) ($g['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong></div>
           <div class="meta">
             ID: <?= htmlspecialchars((string) ($g['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
             Создал: <?= htmlspecialchars((string) ($g['creator_nickname'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
-            <?= htmlspecialchars((string) ($g['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+            <?= htmlspecialchars($formatRuDate((string) ($g['created_at'] ?? '')), ENT_QUOTES, 'UTF-8') ?>
           </div>
         </div>
       <?php endforeach; ?>
