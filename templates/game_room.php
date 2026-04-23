@@ -21,13 +21,13 @@ ob_start();
   </header>
 
   <nav class="game-tabs" role="tablist" aria-label="Вкладки игры">
-    <button class="game-tab is-active" data-tab="board">Поле</button>
-    <button class="game-tab" data-tab="ledger">Бухгалтерия</button>
-    <button class="game-tab" data-tab="timeline">Хронология</button>
-    <button class="game-tab" data-tab="stats">Статистика</button>
-    <button class="game-tab" data-tab="trade">Сделки</button>
-    <button class="game-tab" data-tab="rules">Правила</button>
-    <button class="game-tab" data-tab="history">История</button>
+    <button class="btn btn-outline game-tab is-active" data-tab="board">Поле</button>
+    <button class="btn btn-outline game-tab" data-tab="ledger">Бухгалтерия</button>
+    <button class="btn btn-outline game-tab" data-tab="timeline">Хронология</button>
+    <button class="btn btn-outline game-tab" data-tab="stats">Статистика</button>
+    <button class="btn btn-outline game-tab" data-tab="trade">Сделки</button>
+    <button class="btn btn-outline game-tab" data-tab="rules">Правила</button>
+    <button class="btn btn-outline game-tab" data-tab="history">История</button>
   </nav>
 
   <div class="game-panels">
@@ -35,7 +35,7 @@ ob_start();
       <div class="mono-board">
         <div class="mono-board__main">
           <div class="board" id="board">
-            <div class="corner space nw" id="corner-free" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="symbol parking">P</div><div class="label">парковка</div></div></div>
+            <div class="corner space nw" id="corner-free-nw" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="symbol parking">P</div><div class="label">парковка</div></div></div>
             <div class="row horizontal north">
               <div class="space property" data-group="4" id="prop-kentucky" data-pos="21"><div class="container"><div class="name">Кентукки-авеню</div><div class="cost money">220</div></div></div>
               <div class="space property" data-group="4" id="prop-indiana" data-pos="22"><div class="container"><div class="name">Индиана-авеню</div><div class="cost money">220</div></div></div>
@@ -47,7 +47,7 @@ ob_start();
               <div class="space utility waterworks" data-util="1" id="util-water" data-pos="28"><div class="container"><div class="name">Водоканал</div><div class="cost money">150</div></div></div>
               <div class="space property" data-group="5" id="prop-marvin" data-pos="29"><div class="container"><div class="name">Мэрвин-гарденс</div><div class="cost money">280</div></div></div>
             </div>
-            <div class="corner space ne" id="corner-busted" data-pos="30"><div class="container"><div class="label med go-to">Идите в</div><div class="symbol busted">J</div><div class="label med jail">тюрьму</div></div></div>
+            <div class="corner space ne" id="corner-busted-ne" data-pos="30"><div class="container"><div class="label med go-to">Идите в</div><div class="symbol busted">J</div><div class="label med jail">тюрьму</div></div></div>
             <div class="row vertical west">
               <div class="space property" data-group="3" id="prop-newyork" data-pos="19"><div class="container"><div class="name">Нью-Йорк-авеню</div><div class="cost money">200</div></div></div>
               <div class="space property" data-group="3" id="prop-tennessee" data-pos="18"><div class="container"><div class="name">Теннесси-авеню</div><div class="cost money">180</div></div></div>
@@ -64,8 +64,7 @@ ob_start();
               <div class="logo">Монополия</div>
               <div class="deck-outline chance"></div>
               <div class="player-info">
-                <div class="current">Текущий игрок: <span class="value" id="board-current-player">—</span></div>
-                <div class="player-money">Баланс: <span class="money" id="board-current-money">0</span></div>
+                <div class="current"><span class="value" id="board-status-text">Ожидание хода</span></div>
               </div>
               <div class="dice">
                 <div class="dice-group">
@@ -116,7 +115,7 @@ ob_start();
               <div class="space tax luxury" data-tax="luxury" id="tax-luxury" data-pos="38"><div class="container"><div class="label">Налог на роскошь</div><div class="cost">Плати <div class="money">200</div></div></div></div>
               <div class="space property" data-group="7" id="prop-boardwalk" data-pos="39"><div class="container"><div class="name">Бродвей</div><div class="cost money">400</div></div></div>
             </div>
-            <div class="corner space sw" id="corner-visiting" data-pos="10"><div class="subcorner"><div class="container"><div class="label in">В</div><div class="window"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="person">!</div></div><div class="label jail">Тюрьме</div></div></div><div class="label just">Просто</div><div class="label visiting">в гостях</div></div>
+            <div class="corner space sw" id="corner-jail-sw" data-pos="10"><div class="subcorner"><div class="container"><div class="label in">В</div><div class="window"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="person">!</div></div><div class="label jail">Тюрьме</div></div></div><div class="label just">Просто</div><div class="label visiting">в гостях</div></div>
             <div class="row horizontal south">
               <div class="space property" data-group="1" id="prop-connecticut" data-pos="9"><div class="container"><div class="name">Коннектикут-авеню</div><div class="cost money">120</div></div></div>
               <div class="space property" data-group="1" id="prop-vermont" data-pos="8"><div class="container"><div class="name">Вермонт-авеню</div><div class="cost money">100</div></div></div>
@@ -128,20 +127,18 @@ ob_start();
               <div class="space deck chest" data-deck="chest" id="chest-1" data-pos="2"><div class="container"><div class="label">Казна</div></div></div>
               <div class="space property" data-group="0" id="prop-mediterranean" data-pos="1"><div class="container"><div class="name">Средиземноморский пр.</div><div class="cost money">60</div></div></div>
             </div>
-            <div class="corner space se" id="corner-go" data-pos="0"><div class="container"><div class="text">Получите <span class="cost money">200</span> за проход старта</div><div class="go">GO</div></div><div class="symbol arrow">←</div></div>
+            <div class="corner space se" id="corner-go-se" data-pos="0"><div class="container"><div class="text">Получите <span class="cost money">200</span> за проход старта</div><div class="go">GO</div></div><div class="symbol arrow">←</div></div>
             <div id="modal-overlay" class="modal-overlay hide hidden"><div class="modal-body type-ok"><button class="close"><span class="sr-only">Close modal</span></button><div class="modal-header"><h5 class="modal-title"></h5></div><div class="modal-content"></div><div class="modal-footer"></div></div></div>
             <div id="card-overlay" class="modal-overlay in-deck hide hidden"><div class="card-body"><div class="card-header"><h5 class="card-title"></h5></div><div class="card-content"></div><div class="card-footer"></div></div></div>
             <div id="space-overlay" class="modal-overlay hide hidden"></div>
           </div>
         </div>
         <aside class="mono-board__players tabletop">
-          <h2>Игроки</h2>
-          <div class="tabletop-turn">Текущий ход: <strong id="turn-player-label">—</strong></div>
           <?php foreach ($players as $p): ?>
             <div class="player-chip" data-player-id="<?= (int) $p['id'] ?>">
               <strong><?= htmlspecialchars((string) $p['nickname_snapshot'], ENT_QUOTES, 'UTF-8') ?></strong>
-              <span>💰 <?= (int) $p['cash'] ?></span>
-              <span>📍 <?= (int) $p['position'] ?></span>
+              <span>Баланс: <?= (int) $p['cash'] ?></span>
+              <span>Позиция: <?= (int) $p['position'] ?></span>
               <div class="player-assets"></div>
             </div>
           <?php endforeach; ?>

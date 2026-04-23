@@ -271,31 +271,24 @@ final class GameService
                 $jailTurns = (int) $player['jail_turns'];
                 $cash = (int) $player['cash'];
                 $newPos = $oldPos;
+                if ($inJail && $jailTurns >= self::MAX_JAIL_TRIES) {
+                    // После 3 неудачных попыток игрок освобождается бесплатно в следующий свой ход.
+                    $inJail = false;
+                    $jailTurns = 0;
+                    $payload['jail_released_free'] = true;
+                }
                 if ($inJail && $d1 !== $d2) {
                     $jailTurns++;
                     if ($jailTurns >= self::MAX_JAIL_TRIES) {
-                        $cash -= self::BAIL_AMOUNT;
-                        $inJail = false;
-                        $jailTurns = 0;
-                        $move = $d1 + $d2;
-                        $newPos = ($oldPos + $move) % 40;
-                        if (($oldPos + $move) >= 40) {
-                            $cash += 200;
-                        }
-                        $landing = $this->resolveLanding($gameId, $player, $newPos, $cash);
-                        $newPos = $landing['position'];
-                        $cash = $landing['cash'];
-                        $inJail = $landing['in_jail'];
-                        $jailTurns = $landing['jail_turns'];
-                        $payload = array_merge([
+                        $payload = [
                             'dice' => [$d1, $d2],
+                            'position' => $oldPos,
                             'from_position' => $oldPos,
-                            'position' => $newPos,
                             'cash' => $cash,
-                            'bail_paid' => self::BAIL_AMOUNT,
-                            'forced_bail' => true,
-                        ], $landing['payload']);
-                        $this->games->updatePlayerState((int) $player['id'], $cash, $newPos, $inJail, $jailTurns);
+                            'still_in_jail' => true,
+                            'jail_tries_left' => 0,
+                        ];
+                        $this->games->updatePlayerState((int) $player['id'], $cash, $oldPos, true, self::MAX_JAIL_TRIES);
                         break;
                     }
                     $payload = [
@@ -527,6 +520,36 @@ final class GameService
                 $this->games->updatePropertyBuildings($gameId, $position, $houses, $hasHotel);
                 $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
                 $payload = ['position' => $position, 'build_type' => $buildType, 'houses' => $houses, 'has_hotel' => $hasHotel, 'build_cost' => $cost, 'cash' => $cash];
+                break;
+            case 'sell_building':
+                $position = (int) ($data['position'] ?? $player['position']);
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (($space['type'] ?? '') !== 'property') {
+                    throw new \InvalidArgumentException('Продажа построек доступна только на улицах');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                if ($prop === null || (int) ($prop['owner_player_id'] ?? 0) !== (int) $player['id']) {
+                    throw new \InvalidArgumentException('Вы не владелец этой клетки');
+                }
+                $houses = (int) ($prop['houses'] ?? 0);
+                $hasHotel = $this->normalizeBool($prop['has_hotel'] ?? false);
+                if (!$hasHotel && $houses <= 0) {
+                    throw new \InvalidArgumentException('На клетке нет построек для продажи');
+                }
+                $buildCost = (int) ($space['building_cost'] ?? 0);
+                $refund = (int) floor($buildCost / 2);
+                $sellType = 'house';
+                if ($hasHotel) {
+                    $hasHotel = false;
+                    $houses = 4;
+                    $sellType = 'hotel';
+                } else {
+                    $houses--;
+                }
+                $cash = (int) $player['cash'] + $refund;
+                $this->games->updatePropertyBuildings($gameId, $position, $houses, $hasHotel);
+                $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $payload = ['position' => $position, 'sell_type' => $sellType, 'houses' => $houses, 'has_hotel' => $hasHotel, 'refund' => $refund, 'cash' => $cash];
                 break;
             case 'sell':
                 $position = (int) $player['position'];
