@@ -1949,22 +1949,48 @@ body:has(#auth-popup:target) {
 .tabletop-turn{font-size:1.02rem;margin:0 0 10px;font-weight:600}
 .player-chip{padding:10px;border:1px solid #b8cab8;border-radius:12px;background:#ecf8ec;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
 .player-chip.is-current{outline:2px solid var(--active-color,#d93a96);box-shadow:0 0 0 3px color-mix(in srgb,var(--active-color,#d93a96) 20%,transparent)}
-.player-chip strong{font-size:1.8rem;font-family:"Nata Sans",sans-serif;line-height:1}
-.player-chip strong{cursor:pointer}
+.player-chip strong{font-size:1.8rem;font-family:"Nata Sans",sans-serif;line-height:1;cursor:pointer}
 .player-assets{display:none;gap:6px;flex-wrap:wrap;flex-basis:100%}
 .player-chip.is-open .player-assets{display:flex}
 .asset-card{position:relative;display:flex;flex-direction:column;justify-content:space-between;width:46px;height:72px;padding:3px;border:1px solid #111;background:#fff;box-shadow:0 0 0 0 transparent;transition:box-shadow .2s,border-color .2s}
 .asset-card__bar{display:block;width:100%;height:10px;min-height:10px;border:1px solid #111;flex-shrink:0}
+.asset-card__bar--neutral{background:var(--color_surface,#fff);border:1px solid #111}
 .asset-card__name{display:block;font-size:.5rem;font-weight:700;line-height:1;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;word-break:break-word}
 .asset-card:hover{border-color:#0a8;box-shadow:0 0 10px rgba(0,170,136,.4)}
 .tabletop-card-closeup{margin-top:8px;border:1px solid #b8cab8;border-radius:12px;background:#fff;padding:10px}
 .tabletop-card-closeup__head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .tabletop-card-closeup__close{border:none;background:transparent;font-size:18px;cursor:pointer}
-.tabletop-card-closeup__body .deed-card{border:1px solid #111;padding:8px;background:#fff;min-height:240px}
-.tabletop-card-closeup__body .deed-card__bar{height:28px;border:2px solid #111;margin-bottom:8px}
-.tabletop-card-closeup__body .deed-card h4{margin:0 0 8px;text-align:center;text-transform:uppercase;font-weight:800}
-.tabletop-card-closeup__body .deed-card dl{display:grid;grid-template-columns:1fr auto;gap:6px;margin:0}
-.deed-card__rents{margin-top:8px;border-top:1px solid #ddd;padding-top:8px;font-size:13px;line-height:1.25}
+.tabletop-card-closeup__body{max-height:70vh;overflow:auto}
+.tabletop-card-closeup__body .deed-card{border:1px solid #111;padding:10px 12px 14px;background:#fff;min-height:200px;font-family:"Noto Sans",system-ui,sans-serif;text-transform:none}
+.tabletop-card-closeup__body .deed-card--street{padding:0;border:none;background:transparent}
+.deed-card--street .deed-card__header{padding:10px 12px 14px;border:2px solid #111;display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:4.75rem}
+.deed-card__kicker{font-size:10px;font-weight:700;letter-spacing:.12em;text-align:center;text-transform:uppercase}
+.deed-card__title-name{font-size:17px;font-weight:800;line-height:1.1;text-align:center;text-transform:uppercase}
+.deed-card__header.group-0 .deed-card__kicker,.deed-card__header.group-0 .deed-card__title-name,
+.deed-card__header.group-2 .deed-card__kicker,.deed-card__header.group-2 .deed-card__title-name,
+.deed-card__header.group-4 .deed-card__kicker,.deed-card__header.group-4 .deed-card__title-name,
+.deed-card__header.group-6 .deed-card__kicker,.deed-card__header.group-6 .deed-card__title-name{color:#fff}
+.deed-card__header.group-1 .deed-card__kicker,.deed-card__header.group-1 .deed-card__title-name,
+.deed-card__header.group-5 .deed-card__kicker,.deed-card__header.group-5 .deed-card__title-name{color:#111}
+.deed-card__header.group-3 .deed-card__kicker,.deed-card__header.group-3 .deed-card__title-name,
+.deed-card__header.group-7 .deed-card__kicker,.deed-card__header.group-7 .deed-card__title-name{color:#fff}
+.deed-card--street .deed-card__body{padding:12px 12px 10px;border:2px solid #111;border-top:none;background:#fff}
+.deed-rent-table{display:flex;flex-direction:column;gap:7px;margin:0;font-size:14px;line-height:1.3}
+.deed-rent-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.deed-rent-label{display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-weight:600}
+.deed-house-glyph{position:relative;display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;flex-shrink:0}
+.deed-house-glyph img{width:22px;height:22px;display:block;filter:brightness(0) saturate(100%) invert(37%) sepia(90%) saturate(600%) hue-rotate(100deg)}
+.deed-house-n{position:absolute;font-size:9px;font-weight:900;color:#fff;text-shadow:0 0 2px #000;pointer-events:none}
+.deed-hotel-glyph{display:inline-block;vertical-align:middle;margin-right:2px;filter:brightness(0) saturate(100%) invert(22%) sepia(95%) saturate(5000%) hue-rotate(350deg)}
+.deed-money-wrap{display:inline-flex;align-items:baseline;gap:3px;font-weight:800;white-space:nowrap}
+.deed-currency{font-weight:900;text-decoration:underline;text-decoration-style:double;text-underline-offset:3px}
+.deed-build-costs{margin-top:12px;padding-top:10px;border-top:1px solid #c9c9c9;font-size:13px;line-height:1.45}
+.deed-underline{text-decoration:underline;text-underline-offset:3px;font-weight:800}
+.deed-foot{display:block;font-size:11px;color:#555;font-weight:500;margin-top:2px}
+.deed-price-line{margin-top:10px;font-size:13px;font-weight:700}
+.deed-card--generic .deed-card__plain-title{margin:0 0 8px;text-align:center;text-transform:uppercase;font-size:15px}
+.deed-generic-dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:0;font-size:13px}
+.deed-generic-details{margin:10px 0 0;font-size:13px;line-height:1.35;color:#333}
 
 .chat-box{margin-top:14px;border:1px solid var(--line-mid);border-radius:12px;background:var(--color_surface)}
 .chat-log{max-height:220px;overflow:auto;padding:10px;display:grid;gap:6px}
@@ -1987,7 +2013,7 @@ body:has(#auth-popup:target) {
 .ledger-row__balance{font-size:12px;color:#0b5;white-space:nowrap}
 #stats-box,#trade-box,#rules-box,#history-box,#timeline-box,#ledger-box{font-size:14px;line-height:1.35}
 
-.board{--board-size:min(96vw,68.75rem);--cell:calc(var(--board-size) / 11);background:#090a0e;border:.1875rem solid #090a0e;border-radius:18px;overflow:hidden;display:grid;grid-gap:.125rem;grid-template-columns:var(--cell) 1fr var(--cell);grid-template-rows:var(--cell) 1fr var(--cell);position:relative;width:var(--board-size);height:var(--board-size);margin:0;font-family:"Noto Sans",sans-serif;text-transform:uppercase}
+.board{--board-size:min(96vw,68.75rem);--cell:calc(var(--board-size) / 11);--prop-bar:1.65rem;background:#090a0e;border:.1875rem solid #090a0e;border-radius:18px;overflow:hidden;display:grid;grid-gap:.125rem;grid-template-columns:var(--cell) 1fr var(--cell);grid-template-rows:var(--cell) 1fr var(--cell);position:relative;width:var(--board-size);height:var(--board-size);margin:0;font-family:"Noto Sans",sans-serif;text-transform:uppercase}
 .board .corner,.board .space,.board .center{background:#cde6d0;color:#090a0e}
 .board .space{position:relative;overflow:hidden}
 .board .row{display:grid;grid-gap:.125rem;position:relative}
@@ -2001,10 +2027,10 @@ body:has(#auth-popup:target) {
 .board .space.utility.waterworks .container::after{content:"WW";font-size:1rem;line-height:1;font-weight:800}
 .board .space.deck.chest .container::after{content:"$";font-size:1.2rem;line-height:1;font-weight:800}
 .board .space.deck.chance .container::after{content:"?";font-size:1.3rem;font-weight:800;line-height:1}
-.board .space.property::before{content:"";display:block;position:absolute;left:0;top:0;width:100%;height:1.1rem;border-bottom:.125rem solid #090a0e;z-index:1}
-.board .row.north .space.property::before{top:auto;bottom:0;border-bottom:none;border-top:.125rem solid #090a0e}
-.board .row.west .space.property::before{left:auto;right:0;top:0;width:1.1rem;height:100%;border-bottom:none;border-left:.125rem solid #090a0e}
-.board .row.east .space.property::before{left:0;top:0;width:1.1rem;height:100%;border-bottom:none;border-right:.125rem solid #090a0e}
+.board .space.property::before{content:"";display:block;position:absolute;left:-0.0625rem;top:0;width:calc(100% + 0.125rem);height:var(--prop-bar);border-bottom:.125rem solid #090a0e;z-index:1;box-sizing:border-box}
+.board .row.north .space.property::before{top:auto;bottom:-0.0625rem;left:-0.0625rem;width:calc(100% + 0.125rem);height:var(--prop-bar);border-bottom:none;border-top:.125rem solid #090a0e}
+.board .row.west .space.property::before{left:auto;right:-0.0625rem;top:-0.0625rem;width:var(--prop-bar);height:calc(100% + 0.125rem);border-bottom:none;border-left:.125rem solid #090a0e}
+.board .row.east .space.property::before{left:-0.0625rem;top:-0.0625rem;width:var(--prop-bar);height:calc(100% + 0.125rem);border-bottom:none;border-right:.125rem solid #090a0e}
 .board .space.property[data-group="0"]::before{background:#955436}
 .board .space.property[data-group="1"]::before{background:#aae0fa}
 .board .space.property[data-group="2"]::before{background:#d93a96}
@@ -2016,15 +2042,20 @@ body:has(#auth-popup:target) {
 .board .row.north .space .container{transform:rotate(180deg)}
 .board .row.west .space .container{transform:rotate(90deg);position:relative;width:100%;height:100%;justify-content:space-between;gap:.1rem;padding:4px}
 .board .row.east .space .container{transform:rotate(-90deg);position:relative;width:100%;height:100%;justify-content:space-between;gap:.1rem;padding:4px}
-.board .row.west .space .container .name,.board .row.east .space .container .name{font-size:.47rem;max-width:90%;line-height:1;word-break:break-word}
+.board .row.west .space .container .name,.board .row.east .space .container .name{font-size:.52rem;max-width:96%;line-height:1.08;letter-spacing:-.028em;word-break:break-word;padding:0 1px}
+.board .row.west .space .container .cost,.board .row.east .space .container .cost{font-size:.5rem;padding-bottom:1px}
 .board .space{cursor:pointer}
 .board .space.property .name{font-weight:800}
-.build-icons{position:absolute;display:flex;gap:1px;z-index:3}
-.row.south .space .build-icons{top:1px;left:50%;transform:translateX(-50%)}
-.row.north .space .build-icons{bottom:1px;left:50%;transform:translateX(-50%)}
-.row.west .space .build-icons{right:1px;top:50%;transform:translateY(-50%);flex-direction:column}
-.row.east .space .build-icons{left:1px;top:50%;transform:translateY(-50%);flex-direction:column}
-.build-icon{display:inline-block;width:10px;height:10px;background:var(--owner-color,#0a0)}
+.build-icons{position:absolute;display:flex;gap:3px;z-index:4;pointer-events:none;align-items:center;justify-content:center}
+.build-icons--south{top:calc(var(--prop-bar) + 3px);left:50%;transform:translateX(-50%);flex-direction:row}
+.build-icons--south .build-icon{transform:none}
+.build-icons--north{bottom:calc(var(--prop-bar) + 3px);left:50%;transform:translateX(-50%);flex-direction:row}
+.build-icons--north .build-icon{transform:rotate(180deg)}
+.build-icons--west{right:calc(var(--prop-bar) + 3px);top:50%;transform:translateY(-50%);flex-direction:row}
+.build-icons--west .build-icon{transform:rotate(90deg)}
+.build-icons--east{left:calc(var(--prop-bar) + 3px);top:50%;transform:translateY(-50%);flex-direction:row}
+.build-icons--east .build-icon{transform:rotate(-90deg)}
+.build-icon{display:inline-block;width:30px;height:30px;background:var(--owner-color,#0a0)}
 .build-icon.house{-webkit-mask:url("/assets/images/house.svg") no-repeat center / contain;mask:url("/assets/images/house.svg") no-repeat center / contain}
 .build-icon.hotel{-webkit-mask:url("/assets/images/hotel.svg") no-repeat center / contain;mask:url("/assets/images/hotel.svg") no-repeat center / contain}
 .board .corner{display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative}

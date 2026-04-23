@@ -370,7 +370,13 @@ final class GameService
                     $this->normalizeBool($target['in_jail'] ?? false),
                     (int) $target['jail_turns']
                 );
-                $payload = ['to_player_id' => $toPlayerId, 'amount' => $amount];
+                $payload = [
+                    'to_player_id' => $toPlayerId,
+                    'amount' => $amount,
+                    'from_player_id' => (int) $player['id'],
+                    'from_cash' => $fromCash,
+                    'to_cash' => $toCash,
+                ];
                 break;
             case 'buy':
                 $position = (int) $player['position'];
@@ -424,7 +430,13 @@ final class GameService
                 $ownerCash = (int) $owner['cash'] + $rent;
                 $this->games->updatePlayerState((int) $player['id'], $payerCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
                 $this->games->updatePlayerState((int) $owner['id'], $ownerCash, (int) $owner['position'], $this->normalizeBool($owner['in_jail'] ?? false), (int) $owner['jail_turns']);
-                $payload = ['position' => $position, 'to_player_id' => $ownerPlayerId, 'rent_paid' => $rent, 'cash' => $payerCash];
+                $payload = [
+                    'position' => $position,
+                    'to_player_id' => $ownerPlayerId,
+                    'rent_paid' => $rent,
+                    'cash' => $payerCash,
+                    'owner_cash' => $ownerCash,
+                ];
                 break;
             case 'buyout':
                 $position = (int) $player['position'];
@@ -469,7 +481,15 @@ final class GameService
                 $this->games->updatePlayerState((int) $player['id'], $buyerCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
                 $this->games->updatePlayerState((int) $owner['id'], $ownerCash, (int) $owner['position'], $this->normalizeBool($owner['in_jail'] ?? false), (int) $owner['jail_turns']);
                 $this->games->upsertPropertyOwner($gameId, $position, (int) $player['id']);
-                $payload = ['position' => $position, 'offer_amount' => $offered, 'seller_player_id' => $ownerPlayerId, 'buyer_player_id' => (int) $player['id'], 'cash' => $buyerCash, 'buyout_approved' => true];
+                $payload = [
+                    'position' => $position,
+                    'offer_amount' => $offered,
+                    'seller_player_id' => $ownerPlayerId,
+                    'buyer_player_id' => (int) $player['id'],
+                    'cash' => $buyerCash,
+                    'seller_cash' => $ownerCash,
+                    'buyout_approved' => true,
+                ];
                 break;
             case 'build':
                 $position = (int) ($data['position'] ?? $player['position']);

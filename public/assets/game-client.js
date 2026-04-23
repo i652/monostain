@@ -242,6 +242,91 @@
     }
   }
 
+  function updatePlayerChipRow(playerId) {
+    const id = Number(playerId || 0);
+    if (id <= 0) return;
+    const chip = document.querySelector('.player-chip[data-player-id="' + id + '"]');
+    if (!chip) return;
+    const p = players.find((x) => Number(x.id || 0) === id);
+    const spans = chip.querySelectorAll("span");
+    if (spans[0]) spans[0].textContent = "Баланс: " + Number((p && p.cash) || 0);
+    if (spans[1]) spans[1].textContent = "Позиция: " + Number((p && p.position) || 0);
+  }
+
+  function setPlayerCash(playerId, cash) {
+    const p = players.find((x) => Number(x.id || 0) === Number(playerId));
+    if (p) p.cash = Number(cash);
+    updatePlayerChipRow(playerId);
+  }
+
+  function setPlayerPosition(playerId, pos) {
+    const p = players.find((x) => Number(x.id || 0) === Number(playerId));
+    if (p) p.position = Number(pos);
+    updatePlayerChipRow(playerId);
+  }
+
+  /** Обновляет локальный cash/position по событию из БД (poll или ответ POST). */
+  function applyEconomyFromEvent(eventObj) {
+    const type = String(eventObj.event_type || "");
+    const payload = parsePayload(eventObj);
+    const actorId = Number(eventObj.actor_player_id || 0);
+    if (type === "command_roll" && Number.isFinite(Number(payload.cash))) {
+      setPlayerCash(actorId, payload.cash);
+      if (Number.isFinite(Number(payload.position))) setPlayerPosition(actorId, payload.position);
+      return;
+    }
+    if (type === "command_pay_rent") {
+      if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
+      const toId = Number(payload.to_player_id || 0);
+      const rent = Number(payload.rent_paid || 0);
+      if (toId > 0) {
+        if (Number.isFinite(Number(payload.owner_cash))) {
+          setPlayerCash(toId, payload.owner_cash);
+        } else if (rent > 0) {
+          const p = players.find((x) => Number(x.id || 0) === toId);
+          setPlayerCash(toId, Number((p && p.cash) || 0) + rent);
+        }
+      }
+      return;
+    }
+    if (type === "command_pay") {
+      const fromId = Number(payload.from_player_id || actorId);
+      if (Number.isFinite(Number(payload.from_cash))) setPlayerCash(fromId, payload.from_cash);
+      const toId = Number(payload.to_player_id || 0);
+      if (toId > 0 && Number.isFinite(Number(payload.to_cash))) setPlayerCash(toId, payload.to_cash);
+      return;
+    }
+    if (type === "command_buy" || type === "command_pay_bail" || type === "command_build") {
+      if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
+      return;
+    }
+    if (type === "command_sell" && Number.isFinite(Number(payload.cash))) {
+      setPlayerCash(actorId, payload.cash);
+      return;
+    }
+    if (type === "command_buyout") {
+      if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
+      const sellerId = Number(payload.seller_player_id || 0);
+      if (payload.buyout_approved && sellerId > 0 && Number.isFinite(Number(payload.seller_cash))) {
+        setPlayerCash(sellerId, payload.seller_cash);
+      }
+      return;
+    }
+  }
+
+  function applyEconomyFromEvents(events) {
+    (events || []).forEach((ev) => applyEconomyFromEvent(ev));
+    refreshCurrentPlayerInfo();
+  }
+
+  function ingestServerEvent(result) {
+    if (!result || typeof result !== "object") return;
+    appendTimeline(result);
+    renderFinanceLedger();
+    applyEconomyFromEvent(result);
+    refreshCurrentPlayerInfo();
+  }
+
   function isFinanceEvent(eventObj) {
     if (financeEventTypes.has(String(eventObj.event_type || ""))) return true;
     const payload = parsePayload(eventObj);
@@ -386,6 +471,7 @@
   function refreshFromEvents(events) {
     events.forEach(appendTimeline);
     renderFinanceLedger();
+    applyEconomyFromEvents(events);
     events.forEach((eventObj) => {
       if (eventObj.event_type !== "chat_sent") return;
       const payload = parsePayload(eventObj);
@@ -404,9 +490,8 @@
       pendingBuildType = "";
       const chip = document.querySelector('.player-chip[data-player-id="' + actorId + '"]');
       if (!chip || !payload) return;
-      const spans = chip.querySelectorAll("span");
-      if (spans[0]) spans[0].textContent = "Баланс: " + payload.cash;
-      if (spans[1]) spans[1].textContent = "Позиция: " + payload.position;
+      if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
+      if (Number.isFinite(Number(payload.position))) setPlayerPosition(actorId, payload.position);
       const dice = Array.isArray(payload.dice) ? payload.dice : [0, 0];
       const die1 = document.querySelector("#die-1");
       const die2 = document.querySelector("#die-2");
@@ -538,7 +623,8 @@
         if (action === "roll") {
           if (rollAction) rollAction.classList.add("hidden");
         }
-        await postJson("/api/v1/game/" + gameId + "/commands", payload);
+        const ev = await postJson("/api/v1/game/" + gameId + "/commands", payload);
+        ingestServerEvent(ev);
         if (action === "buy" || action === "sell") {
           await reloadPropertyState();
         }
@@ -552,11 +638,12 @@
     btn.addEventListener("click", async () => {
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
       try {
-        await postJson("/api/v1/game/" + gameId + "/commands", {
+        const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
           action: "pay_bail",
           as_player_id: actorPlayerId,
           client_msg_id: "bail_" + Date.now(),
         });
+        ingestServerEvent(ev);
         document.querySelectorAll(".action.pay-bail,.action.roll-pay").forEach((el) => el.classList.add("hidden"));
         if (rollAction) rollAction.classList.remove("hidden");
       } catch (err) {
@@ -570,11 +657,12 @@
     purchaseBtn.addEventListener("click", async () => {
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
       try {
-        await postJson("/api/v1/game/" + gameId + "/commands", {
+        const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
           action: "buy",
           as_player_id: actorPlayerId,
           client_msg_id: "buy_" + Date.now(),
         });
+        ingestServerEvent(ev);
         await reloadPropertyState();
         if (purchaseAction) purchaseAction.classList.add("hidden");
         if (endAction) endAction.classList.remove("hidden");
@@ -595,11 +683,12 @@
     payRentBtn.addEventListener("click", async () => {
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
       try {
-        await postJson("/api/v1/game/" + gameId + "/commands", {
+        const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
           action: "pay_rent",
           as_player_id: actorPlayerId,
           client_msg_id: "rent_" + Date.now(),
         });
+        ingestServerEvent(ev);
         if (rentAction) rentAction.classList.add("hidden");
         if (endAction) endAction.classList.remove("hidden");
       } catch (err) {
@@ -613,13 +702,14 @@
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
       const approved = await askOwnerBuyoutDecision(currentBuyoutMin);
       try {
-        await postJson("/api/v1/game/" + gameId + "/commands", {
+        const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
           action: "buyout",
           as_player_id: actorPlayerId,
           offer_amount: currentBuyoutMin > 0 ? currentBuyoutMin : (currentRentDue * 10),
           approved_by_owner: approved,
           client_msg_id: "buyout_" + Date.now(),
         });
+        ingestServerEvent(ev);
         await reloadPropertyState();
         if (approved) {
           if (rentAction) rentAction.classList.add("hidden");
@@ -854,6 +944,7 @@
       if (chip) chip.style.setProperty("--active-color", color);
       setTokenPosition(Number(p.id || 0), Number(p.position || 0));
     });
+    players.forEach((p) => updatePlayerChipRow(Number(p.id || 0)));
     markActiveToken();
   }
 
@@ -986,10 +1077,11 @@
         const el = document.createElement("button");
         el.type = "button";
         el.className = "asset-card";
-        const colorClass = groupColorClass[Number(meta.group)] || "";
+        const hasGroup = meta.group !== null && meta.group !== undefined;
+        const colorClass = hasGroup ? groupColorClass[Number(meta.group)] || "" : "asset-card__bar--neutral";
         el.innerHTML = `<span class="asset-card__bar ${colorClass}"></span><span class="asset-card__name">${escapeHtml(meta.name)}</span>`;
         el.addEventListener("click", () => {
-          openDeedCard(meta);
+          showDeedSidebar(meta);
         });
         assets.appendChild(el);
       });
@@ -1037,8 +1129,13 @@
           box.appendChild(icon);
         }
       }
-      const container = space.querySelector(".container");
-      if (container) container.appendChild(box);
+      const row = space.closest(".row");
+      let edge = "south";
+      if (row && row.classList.contains("north")) edge = "north";
+      else if (row && row.classList.contains("west")) edge = "west";
+      else if (row && row.classList.contains("east")) edge = "east";
+      box.classList.add("build-icons--" + edge);
+      space.appendChild(box);
     });
   }
 
@@ -1067,35 +1164,85 @@
     return { canHouse, canHotel };
   }
 
-  function openDeedCard(meta) {
-    const wrap = document.querySelector("#space-overlay");
-    if (!wrap) return;
-    const colorClass = groupColorClass[Number(meta.group)] || "";
-    const baseRent = Number(meta.rent || 0);
-    const buildCost = Number(groupBuildCost[Number(meta.group || 0)] || 0);
-    const rent1 = baseRent * 3;
-    const rent2 = baseRent * 5;
-    const rent3 = baseRent * 8;
-    const rent4 = baseRent * 12;
-    const rentHotel = baseRent * 25;
-    const isColoredProperty = meta.group !== null && meta.group !== undefined;
-    const details = escapeHtml(String(meta.details || "Эта клетка влияет на ход по правилам Monopoly."));
-    const inner = isColoredProperty
-      ? `<div class="deed-card"><div class="deed-card__bar ${colorClass}"></div><h4>${escapeHtml(meta.name)}</h4><dl><dt>Цена</dt><dd>${Number(meta.price || 0)}</dd><dt>База ренты</dt><dd>${baseRent}</dd><dt>Дом (стоимость)</dt><dd>${buildCost || "—"}</dd></dl><div class="deed-card__rents">Рента: 1 дом ${rent1} · 2 дома ${rent2} · 3 дома ${rent3} · 4 дома ${rent4} · отель ${rentHotel}</div></div>`
-      : `<div class="deed-card"><h4>${escapeHtml(meta.name)}</h4><dl><dt>Тип</dt><dd>${escapeHtml(String(meta.type || "служебная"))}</dd><dt>Стоимость</dt><dd>${Number(meta.price || 0) > 0 ? Number(meta.price || 0) : "—"}</dd><dt>Базовый эффект</dt><dd>${Number(meta.rent || 0) > 0 ? Number(meta.rent || 0) : "—"}</dd></dl><div class="deed-card__rents">${details}</div></div>`;
-    wrap.innerHTML = `<div class="modal-body type-ok"><button class="close" type="button"><span class="sr-only">Close modal</span></button><div class="modal-header"><h5 class="modal-title">${escapeHtml(meta.name)}</h5></div><div class="modal-content">${inner}</div></div>`;
-    wrap.classList.remove("hidden", "hide");
-    wrap.classList.add("show");
-    const close = () => {
-      wrap.classList.remove("show");
-      wrap.classList.add("hide");
-      window.setTimeout(() => {
-        wrap.classList.add("hidden");
-      }, 200);
-    };
-    wrap.onclick = (evt) => {
-      if (evt.target === wrap || evt.target.closest(".close")) close();
-    };
+  function deedMoney(amount) {
+    const n = Number(amount);
+    return `<span class="deed-money-wrap"><abbr class="deed-currency" title="Условные деньги">M</abbr><span class="deed-money-num">${n}</span></span>`;
+  }
+
+  function houseRentRow(n, amount) {
+    const word = n === 1 ? "домом" : "домами";
+    return `<div class="deed-rent-row">
+      <span class="deed-rent-label"><span class="deed-house-glyph"><img src="/assets/images/house.svg" alt="" width="18" height="18"/><span class="deed-house-n">${n}</span></span><span>С ${n} ${word}</span></span>
+      <span class="deed-rent-val">${deedMoney(amount)}</span>
+    </div>`;
+  }
+
+  function hotelRentRow(amount) {
+    return `<div class="deed-rent-row">
+      <span class="deed-rent-label"><img src="/assets/images/hotel.svg" class="deed-hotel-glyph" alt="" width="22" height="22"/> С отелем</span>
+      <span class="deed-rent-val">${deedMoney(amount)}</span>
+    </div>`;
+  }
+
+  function buildStreetDeedHtml(meta) {
+    const g = Number(meta.group);
+    const colorClass = groupColorClass[g] || "";
+    const base = Number(meta.rent || 0);
+    const buildCost = Number(groupBuildCost[g] || 0);
+    const rentColor = base * 2;
+    const r1 = base * 3;
+    const r2 = base * 5;
+    const r3 = base * 8;
+    const r4 = base * 12;
+    const rH = base * 25;
+    return `<div class="deed-card deed-card--street">
+      <div class="deed-card__header ${colorClass}">
+        <div class="deed-card__kicker">КАРТОЧКА СОБСТВЕННОСТИ</div>
+        <div class="deed-card__title-name">${escapeHtml(meta.name)}</div>
+      </div>
+      <div class="deed-card__body">
+        <div class="deed-rent-table">
+          <div class="deed-rent-row"><span>Аренда</span><span>${deedMoney(base)}</span></div>
+          <div class="deed-rent-row"><span>Аренда при полном наборе цвета</span><span>${deedMoney(rentColor)}</span></div>
+          ${houseRentRow(1, r1)}
+          ${houseRentRow(2, r2)}
+          ${houseRentRow(3, r3)}
+          ${houseRentRow(4, r4)}
+          ${hotelRentRow(rH)}
+        </div>
+        <div class="deed-build-costs">
+          <div>Дома: <span class="deed-underline">${deedMoney(buildCost)}</span> каждый</div>
+          <div>Отели: <span class="deed-underline">${deedMoney(buildCost)}</span><span class="deed-foot"> (плюс 4 дома)</span></div>
+        </div>
+        <div class="deed-price-line">Цена собственности: ${deedMoney(Number(meta.price || 0))}</div>
+      </div>
+    </div>`;
+  }
+
+  function buildGenericDeedHtml(meta) {
+    const details = escapeHtml(String(meta.details || "Клетка действует по правилам Monopoly."));
+    const price = Number(meta.price || 0) > 0 ? deedMoney(meta.price) : "—";
+    const effect = Number(meta.rent || 0) > 0 ? deedMoney(meta.rent) : "—";
+    return `<div class="deed-card deed-card--generic">
+      <h4 class="deed-card__plain-title">${escapeHtml(meta.name)}</h4>
+      <dl class="deed-generic-dl">
+        <dt>Тип</dt><dd>${escapeHtml(String(meta.type || "служебная"))}</dd>
+        <dt>Цена / сбор</dt><dd>${price}</dd>
+        <dt>Эффект</dt><dd>${effect}</dd>
+      </dl>
+      <p class="deed-generic-details">${details}</p>
+    </div>`;
+  }
+
+  function showDeedSidebar(meta) {
+    const wrap = document.querySelector("#tabletop-card-closeup");
+    const title = document.querySelector("#tabletop-card-closeup-title");
+    const body = document.querySelector("#tabletop-card-closeup-body");
+    if (!wrap || !title || !body) return;
+    title.textContent = meta.name;
+    const isStreet = meta.group !== null && meta.group !== undefined;
+    body.innerHTML = isStreet ? buildStreetDeedHtml(meta) : buildGenericDeedHtml(meta);
+    wrap.classList.remove("hidden");
   }
 
   document.querySelectorAll("#board [data-pos]").forEach((cell) => {
@@ -1105,13 +1252,14 @@
       if (pendingBuildType) {
         const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
         try {
-          await postJson("/api/v1/game/" + gameId + "/commands", {
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
             action: "build",
             build_type: pendingBuildType,
             position: pos,
             as_player_id: actorPlayerId,
             client_msg_id: "build_" + pendingBuildType + "_" + Date.now(),
           });
+          ingestServerEvent(ev);
           await reloadPropertyState();
           showNotify(pendingBuildType === "hotel" ? "Отель построен" : "Дом построен");
         } catch (err) {
@@ -1123,12 +1271,17 @@
       }
       const meta = boardMeta[pos];
       if (!meta) return;
-      openDeedCard(meta);
+      showDeedSidebar(meta);
     });
   });
 
-  const closeupWrap = document.querySelector("#tabletop-card-closeup");
-  if (closeupWrap) closeupWrap.classList.add("hidden");
+  const closeupCloseBtn = document.querySelector("#tabletop-card-closeup-close");
+  if (closeupCloseBtn) {
+    closeupCloseBtn.addEventListener("click", () => {
+      const w = document.querySelector("#tabletop-card-closeup");
+      if (w) w.classList.add("hidden");
+    });
+  }
 
   function showBoardModal(title, text) {
     const root = document.querySelector("#modal-overlay");
