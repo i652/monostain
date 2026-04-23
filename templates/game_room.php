@@ -5,15 +5,20 @@ $game = $gameView['game'];
 $players = $gameView['players'];
 $events = $gameView['events'];
 $propertyState = $gameView['property_state'] ?? [];
+$boardCells = $gameView['board_cells'] ?? [];
 $chat = $gameView['chat'];
 $self = $gameView['self'];
 $playersJson = json_encode($players, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $propertyStateJson = json_encode($propertyState, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$boardCellsJson = json_encode($boardCells, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 ob_start();
+$boardTemplateId = (int) ($game['board_template_id'] ?? 0);
+$boardTemplateName = trim((string) ($game['board_template_name'] ?? ''));
+$editBoardHref = $boardTemplateId > 0 ? ('/panel/game-boards/' . $boardTemplateId . '/edit') : '/panel/game-boards/new';
 ?>
-<section class="game-room" data-game-id="<?= htmlspecialchars((string) $game['id'], ENT_QUOTES, 'UTF-8') ?>" data-player-id="<?= (int) $self['id'] ?>" data-players='<?= htmlspecialchars((string) $playersJson, ENT_QUOTES, 'UTF-8') ?>' data-property-state='<?= htmlspecialchars((string) $propertyStateJson, ENT_QUOTES, 'UTF-8') ?>'>
+<section class="game-room" data-game-id="<?= htmlspecialchars((string) $game['id'], ENT_QUOTES, 'UTF-8') ?>" data-player-id="<?= (int) $self['id'] ?>" data-players='<?= htmlspecialchars((string) $playersJson, ENT_QUOTES, 'UTF-8') ?>' data-property-state='<?= htmlspecialchars((string) $propertyStateJson, ENT_QUOTES, 'UTF-8') ?>' data-board-cells='<?= htmlspecialchars((string) $boardCellsJson, ENT_QUOTES, 'UTF-8') ?>' data-board-template-id="<?= $boardTemplateId ?>">
   <header class="game-room__header">
-    <h1>Игровая комната</h1>
+    <h1><?= htmlspecialchars($boardTemplateName !== '' ? $boardTemplateName : 'Игровая комната', ENT_QUOTES, 'UTF-8') ?> <a href="<?= htmlspecialchars($editBoardHref, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="margin-left:8px;vertical-align:middle">Редактировать карту</a></h1>
     <div class="game-room__tools">
       <button class="btn btn-outline" id="game-invite-link">Пригласить по ссылке</button>
       <button class="btn btn-outline" id="game-invite-nick">Пригласить по никнейму</button>
@@ -23,10 +28,6 @@ ob_start();
   <div class="game-toolbar-row">
     <div class="main-action main-action--top">
       <div class="action roll"><button class="roll-dice js-game-command" data-action="roll">Бросить кубики</button></div>
-      <div class="action rotate">
-        <button type="button" class="board-rotate-btn board-rotate-left" aria-label="Повернуть карту влево">⟲</button>
-        <button type="button" class="board-rotate-btn board-rotate-right" aria-label="Повернуть карту вправо">⟳</button>
-      </div>
       <div class="action end hidden"><button class="end-turn js-game-command" data-action="end_turn">Завершить ход</button></div>
       <div class="action purchase hidden">
         <button class="purchase-property">Купить <span class="name"></span></button>
@@ -67,7 +68,9 @@ ob_start();
     <section class="game-panel is-active" data-panel="board">
       <div class="mono-board">
         <div class="board-player-status"><span class="value" id="board-status-text">Ожидание хода</span></div>
+        <div class="turn-choice-box hidden" id="turn-choice-box"></div>
         <div class="mono-board__main">
+          <div class="board-shell">
           <div class="board" id="board">
             <div class="corner space nw" id="corner-free-nw" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="symbol parking">P</div><div class="label">парковка</div></div></div>
             <div class="row horizontal north">
@@ -94,9 +97,7 @@ ob_start();
               <div class="space property" data-group="2" id="prop-stcharles" data-pos="11"><div class="container"><div class="name">Сент-Чарльз-плейс</div><div class="cost money">140</div></div></div>
             </div>
             <div class="center">
-              <div class="deck-outline chest"></div>
               <div class="logo">Монополия</div>
-              <div class="deck-outline chance"></div>
               <div class="dice-arena" id="dice-arena">
                 <div class="dice-cube dice-one" id="dice1">
                   <div class="side one"><div class="dot one-1"></div></div>
@@ -140,10 +141,16 @@ ob_start();
               <div class="space property" data-group="0" id="prop-mediterranean" data-pos="1"><div class="container"><div class="name">Средиземноморский пр.</div><div class="cost money">60</div></div></div>
             </div>
             <div class="corner space se" id="corner-go-se" data-pos="0"><div class="container"><div class="text">Получите <span class="cost money">200</span> за проход старта</div><div class="go">GO</div></div><div class="symbol arrow">←</div></div>
-            <div id="modal-overlay" class="modal-overlay hide hidden"><div class="modal-body type-ok"><button class="close"><span class="sr-only">Close modal</span></button><div class="modal-header"><h5 class="modal-title"></h5></div><div class="modal-content"></div><div class="modal-footer"></div></div></div>
-            <div id="card-overlay" class="modal-overlay in-deck hide hidden"><div class="card-body"><div class="card-header"><h5 class="card-title"></h5></div><div class="card-content"></div><div class="card-footer"></div></div></div>
-            <div id="space-overlay" class="modal-overlay hide hidden"></div>
           </div>
+          <div class="board-rotate-strip">
+            <button type="button" class="board-rotate-btn board-rotate-left" aria-label="Повернуть карту влево">⟲</button>
+            <span class="board-rotate-label">Поворот доски</span>
+            <button type="button" class="board-rotate-btn board-rotate-right" aria-label="Повернуть карту вправо">⟳</button>
+          </div>
+          </div>
+          <div id="modal-overlay" class="modal-overlay hide hidden"><div class="modal-body type-ok"><button class="close"><span class="sr-only">Close modal</span></button><div class="modal-header"><h5 class="modal-title"></h5></div><div class="modal-content"></div><div class="modal-footer"></div></div></div>
+          <div id="card-overlay" class="modal-overlay in-deck hide hidden"><div class="card-body"><div class="card-header"><h5 class="card-title"></h5></div><div class="card-content"></div><div class="card-footer"></div></div></div>
+          <div id="space-overlay" class="modal-overlay hide hidden"></div>
           <div class="board-bottom-row">
             <div class="chat-box">
               <div class="chat-log" id="chat-log">

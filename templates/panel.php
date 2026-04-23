@@ -36,6 +36,7 @@ $formatRuDate = static function (string $raw): string {
       <label for="panel_media">Медиа</label>
       <input type="radio" name="panel_section" id="panel_games" value="games" <?= ($section ?? 'posts') === 'games' ? 'checked' : '' ?>>
       <label for="panel_games">Игры</label>
+      <a href="/panel/game-boards" class="btn btn-outline" style="margin-left:8px">Карты</a>
     </div>
   </div>
 

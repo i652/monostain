@@ -77,6 +77,7 @@
       try {
         status.textContent = "Создаём игру...";
         const result = await postJson("/api/v1/game", {
+          board_template_id: Number(formData.get("board_template_id") || 0),
           max_players: Number(formData.get("max_players") || 8),
           allow_bots: formData.get("allow_bots") === "on" ? true : false,
         });
@@ -105,6 +106,8 @@
   const selfPlayerId = Number(room.getAttribute("data-player-id") || 0);
   const playersRaw = room.getAttribute("data-players") || "[]";
   const propertyRaw = room.getAttribute("data-property-state") || "[]";
+  const boardCellsRaw = room.getAttribute("data-board-cells") || "[]";
+  const boardTemplateId = Number(room.getAttribute("data-board-template-id") || 0);
   const players = (() => {
     try {
       return JSON.parse(playersRaw);
@@ -115,6 +118,13 @@
   const propertyState = (() => {
     try {
       return JSON.parse(propertyRaw);
+    } catch (_) {
+      return [];
+    }
+  })();
+  const boardCells = (() => {
+    try {
+      return JSON.parse(boardCellsRaw);
     } catch (_) {
       return [];
     }
@@ -185,6 +195,7 @@
   const buildHotelBtn = document.querySelector(".build-hotel");
   const purchaseName = document.querySelector(".main-action .action.purchase .name");
   const buyoutOfferInput = document.querySelector(".main-action .action.rent .buyout-offer-input");
+  const turnChoiceBox = document.querySelector("#turn-choice-box");
   let currentRentDue = 0;
   let currentBuyoutMin = 0;
   let pendingBuildType = "";
@@ -192,7 +203,9 @@
   let autoEndTurnInFlight = false;
   let suppressTransientModals = true;
   let boardRotationDeg = 0;
+  let liveAnimationEnabled = false;
   let buyoutInputVisible = false;
+  applyBoardTemplateLayout(boardCells, boardTemplateId);
   renderTokens();
   const rotateLeftBtn = document.querySelector(".board-rotate-left");
   const rotateRightBtn = document.querySelector(".board-rotate-right");
@@ -228,11 +241,11 @@
   });
 
   function appendTimeline(eventObj) {
-    const box = document.querySelector("#timeline-box");
-    if (!box) return;
     if (processedEventSeq.has(Number(eventObj.event_seq || 0))) return;
     processedEventSeq.add(Number(eventObj.event_seq || 0));
     allEvents.push(eventObj);
+    const box = document.querySelector("#timeline-box");
+    if (!box) return;
     renderTimeline();
   }
 
@@ -530,6 +543,7 @@
   }
 
   function refreshPlayers(events) {
+    const shouldAnimateMoves = liveAnimationEnabled && events.length <= 3;
     events.forEach((e) => {
       if (e.event_type !== "command_roll") return;
       const payload = parsePayload(e);
@@ -537,10 +551,13 @@
       clearBuildSelection();
       const chip = document.querySelector('.player-chip[data-player-id="' + actorId + '"]');
       if (!chip || !payload) return;
+      if (turnChoiceBox) turnChoiceBox.classList.add("hidden");
       if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
       if (Number.isFinite(Number(payload.position))) setPlayerPosition(actorId, payload.position);
       const dice = Array.isArray(payload.dice) ? payload.dice : [0, 0];
-      rollDiceVisual(Number(dice[0] || 1), Number(dice[1] || 1), actorId);
+      if (shouldAnimateMoves) {
+        rollDiceVisual(Number(dice[0] || 1), Number(dice[1] || 1), actorId);
+      }
       if (payload.offer_purchase) {
         currentRentDue = 0;
         currentBuyoutMin = 0;
@@ -614,10 +631,14 @@
         if (payload.buyout_approved) showBoardModal("Выкуп принят", `Клетка выкуплена за ${payload.offer_amount}`);
         if (payload.tax_paid) showBoardModal("Налог", `Оплачен налог: ${payload.tax_paid}`);
       }
+      if (Array.isArray(payload.turn_options) && payload.turn_options.length) {
+        showTurnChoiceOptions(payload.turn_options, actorId);
+      }
       const fromPos = Number(payload.from_position ?? payload.position ?? 0);
       const toPos = Number(payload.position || 0);
       setBoardStatus(`${actorName(e)} перешёл с позиции ${fromPos} на позицию ${toPos}`, 1400);
-      animateMove(actorId, fromPos, toPos);
+      if (shouldAnimateMoves) animateMove(actorId, fromPos, toPos);
+      else setTokenPosition(actorId, toPos, { instant: true });
     });
     events.forEach((e) => {
       if (e.event_type !== "command_end_turn") return;
@@ -1121,18 +1142,71 @@
       playerColorById.set(Number(p.id || 0), color);
       const token = document.createElement("div");
       token.className = `token color-${idx % 8}`;
+      token.classList.add("no-anim");
       token.style.setProperty("--token-color", color);
       token.dataset.playerId = String(Number(p.id || 0));
       board.appendChild(token);
       const chip = document.querySelector(`.player-chip[data-player-id="${Number(p.id || 0)}"]`);
       if (chip) chip.style.setProperty("--active-color", color);
-      setTokenPosition(Number(p.id || 0), Number(p.position || 0));
+      setTokenPosition(Number(p.id || 0), Number(p.position || 0), { instant: true });
     });
     players.forEach((p) => updatePlayerChipRow(Number(p.id || 0)));
     markActiveToken();
+    window.setTimeout(() => {
+      document.querySelectorAll(".token.no-anim").forEach((el) => el.classList.remove("no-anim"));
+      liveAnimationEnabled = true;
+    }, 250);
   }
 
-  function setTokenPosition(playerId, pos) {
+  function applyBoardTemplateLayout(cells, templateId) {
+    const board = document.querySelector("#board");
+    if (!board || !Array.isArray(cells) || cells.length === 0) return;
+    // Keep classic Monopoly on proven static layout to avoid regressions.
+    if (Number(templateId || 0) === 2) return;
+    const byPos = new Map();
+    cells.forEach((cell) => {
+      const logicalPos = Number(cell.position ?? -1);
+      if (logicalPos < 0) return;
+      let extra = cell.extra_json;
+      if (typeof extra === "string") {
+        try { extra = JSON.parse(extra); } catch (_) { extra = {}; }
+      }
+      const x = Number((extra && extra.x) ?? -1);
+      const y = Number((extra && extra.y) ?? -1);
+      if (x < 0 || y < 0) return;
+      const orientation = String((extra && extra.orientation) || "");
+      byPos.set(logicalPos, { x, y, orientation });
+    });
+    if (byPos.size === 0) return;
+    board.classList.add("board--template");
+    const cellEls = Array.from(board.querySelectorAll("[data-pos]"));
+    cellEls.forEach((el) => board.appendChild(el));
+    board.querySelectorAll(".row").forEach((el) => { el.style.display = "none"; });
+    board.querySelectorAll(".center .logo").forEach((el) => { el.style.display = "none"; });
+    cellEls.forEach((el) => {
+      const pos = Number(el.getAttribute("data-pos") || -1);
+      const c = byPos.get(pos);
+      if (!c) return;
+      el.style.position = "absolute";
+      el.style.left = `calc(${c.x} * var(--cell))`;
+      el.style.top = `calc(${c.y} * var(--cell))`;
+      el.style.width = "var(--cell)";
+      el.style.height = "var(--cell)";
+      let edge = String(c.orientation || "");
+      if (!edge) {
+        edge = "south";
+        if (c.y === 0) edge = "north";
+        else if (c.y === 10) edge = "south";
+        else if (c.x === 0) edge = "west";
+        else if (c.x === 10) edge = "east";
+        else edge = c.y <= 5 ? "north" : "south";
+      }
+      el.dataset.edge = edge;
+      el.classList.add("edge-" + edge);
+    });
+  }
+
+  function setTokenPosition(playerId, pos, options = {}) {
     const board = document.querySelector("#board");
     const token = document.querySelector(`.token[data-player-id="${playerId}"]`);
     const space = document.querySelector(`#board [data-pos="${pos}"]`);
@@ -1147,8 +1221,12 @@
     }).length;
     const dx = (samePosTokens % 3) * 10 - 8;
     const dy = Math.floor(samePosTokens / 3) * 10 - 8;
+    if (options.instant) token.classList.add("no-anim");
     token.style.left = `${(s.left - b.left) + (s.width / 2) + dx}px`;
     token.style.top = `${(s.top - b.top) + (s.height / 2) + dy}px`;
+    if (options.instant) {
+      window.setTimeout(() => token.classList.remove("no-anim"), 0);
+    }
     const pRef = players.find((x) => Number(x.id || 0) === playerId);
     if (pRef) pRef.position = pos;
     markActiveToken();
@@ -1275,6 +1353,40 @@
     } catch (_) {}
   }
 
+  function showTurnChoiceOptions(options, actorPlayerId) {
+    if (!turnChoiceBox) return;
+    const labels = {
+      left: "Повернуть налево",
+      straight: "Пойти прямо",
+      right: "Повернуть направо",
+    };
+    turnChoiceBox.innerHTML = "";
+    options.forEach((opt) => {
+      const key = String(opt || "");
+      if (!labels[key]) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = labels[key];
+      btn.addEventListener("click", async () => {
+        try {
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+            action: "choose_direction",
+            direction: key,
+            as_player_id: actorPlayerId,
+            client_msg_id: "choose_direction_" + Date.now(),
+          });
+          ingestServerEvent(ev);
+          turnChoiceBox.classList.add("hidden");
+        } catch (err) {
+          showPopup(toRuError(err.message || "Не удалось выбрать направление"));
+        }
+      });
+      turnChoiceBox.appendChild(btn);
+    });
+    if (turnChoiceBox.children.length > 0) turnChoiceBox.classList.remove("hidden");
+  }
+
   function applyPropertyStateFromEvent(eventObj) {
     const type = String(eventObj.event_type || "");
     const payload = parsePayload(eventObj);
@@ -1398,10 +1510,18 @@
       const ownerColor = playerColorById.get(ownerId) || "#0a66ff";
       const houses = Number(ps.houses || 0);
       const hasHotel = Boolean(ps.has_hotel);
-      if (!houses && !hasHotel) return;
       const box = document.createElement("div");
       box.className = "build-icons";
       box.style.pointerEvents = "auto";
+      const canQuickBuildHouse = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
+        && canAffordAnyBuild(ownerId, "house")
+        && getBuildablePositions(ownerId, "house").has(pos);
+      const canQuickBuildHotel = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
+        && !hasHotel
+        && Number(houses) >= 4
+        && canAffordAnyBuild(ownerId, "hotel")
+        && getBuildablePositions(ownerId, "hotel").has(pos);
+      if (!houses && !hasHotel && !canQuickBuildHouse) return;
       if (hasHotel) {
         const icon = document.createElement("span");
         icon.className = "build-icon hotel";
@@ -1421,10 +1541,13 @@
         box.appendChild(stack);
       }
       const row = space.closest(".row");
-      let edge = "south";
-      if (row && row.classList.contains("north")) edge = "north";
-      else if (row && row.classList.contains("west")) edge = "west";
-      else if (row && row.classList.contains("east")) edge = "east";
+      let edge = String(space.dataset.edge || "");
+      if (!edge) {
+        edge = "south";
+        if (row && row.classList.contains("north")) edge = "north";
+        else if (row && row.classList.contains("west")) edge = "west";
+        else if (row && row.classList.contains("east")) edge = "east";
+      }
       box.classList.add("build-icons--" + edge);
       box.addEventListener("click", async (evt) => {
         evt.preventDefault();
@@ -1445,9 +1568,6 @@
           showPopup(toRuError(err.message || "Не удалось продать постройку"));
         }
       });
-      const canQuickBuildHouse = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
-        && canAffordAnyBuild(ownerId, "house")
-        && getBuildablePositions(ownerId, "house").has(pos);
       if (canQuickBuildHouse) {
         const plus = document.createElement("button");
         plus.type = "button";
@@ -1473,11 +1593,6 @@
         });
         box.appendChild(plus);
       }
-      const canQuickBuildHotel = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
-        && !hasHotel
-        && Number(houses) >= 4
-        && canAffordAnyBuild(ownerId, "hotel")
-        && getBuildablePositions(ownerId, "hotel").has(pos);
       if (canQuickBuildHotel) {
         const plusHotel = document.createElement("button");
         plusHotel.type = "button";
@@ -1519,8 +1634,13 @@
       const state = propertyState.find((ps) => Number(ps.cell_position || -1) === pos);
       const status = document.createElement("div");
       status.className = "space-owner-status";
+      const edge = String(space.dataset.edge || "");
       const row = space.closest(".row");
-      if (row && row.classList.contains("north")) status.classList.add("space-owner-status--north");
+      if (edge === "north") status.classList.add("space-owner-status--north");
+      else if (edge === "south") status.classList.add("space-owner-status--south");
+      else if (edge === "west") status.classList.add("space-owner-status--west");
+      else if (edge === "east") status.classList.add("space-owner-status--east");
+      else if (row && row.classList.contains("north")) status.classList.add("space-owner-status--north");
       else if (row && row.classList.contains("south")) status.classList.add("space-owner-status--south");
       else if (row && row.classList.contains("west")) status.classList.add("space-owner-status--west");
       else if (row && row.classList.contains("east")) status.classList.add("space-owner-status--east");
@@ -2118,7 +2238,7 @@ function animateDiceChaos(d1, d2) {
   const dice = [document.querySelector("#dice1"), document.querySelector("#dice2")].filter(Boolean);
   if (!arena || dice.length === 0) return;
   const b = arena.getBoundingClientRect();
-  const size = 100;
+  const size = 72;
   const minX = 0;
   const minY = 0;
   const maxX = Math.max(minX, b.width - size);

@@ -10,19 +10,13 @@ ob_start();
     <?php if ($notice !== ''): ?>
       <p class="form-ok"><?= htmlspecialchars($notice, ENT_QUOTES, 'UTF-8') ?></p>
     <?php endif; ?>
-    <form method="post" action="/panel/game-boards" class="quick-form panel-form">
-      <label for="board_name">Название карты</label>
-      <input id="board_name" type="text" name="name" maxlength="120" required>
-      <label class="check-row">
-        <input type="checkbox" name="is_published" value="1">
-        Сразу опубликовать
-      </label>
-      <button class="btn btn-outline" type="submit">Создать карту</button>
-    </form>
-    <div class="panel-list" style="margin-top:16px">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <a class="btn btn-outline" href="/panel/game-boards/new">Новая карта</a>
+    </div>
+    <div class="panel-list" style="margin-top:6px">
       <?php foreach ($templates as $tpl): ?>
         <div class="panel-list-item">
-          <strong><?= htmlspecialchars((string) ($tpl['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong>
+          <strong><a href="/panel/game-boards/<?= (int) ($tpl['id'] ?? 0) ?>/edit"><?= htmlspecialchars((string) ($tpl['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></a></strong>
           <div class="meta">Статус: <?= (bool) ($tpl['is_published'] ?? false) ? 'published' : 'draft' ?></div>
         </div>
       <?php endforeach; ?>

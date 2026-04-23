@@ -27,16 +27,17 @@ $formatRuDate = static function (string $raw): string {
     <?php else: ?>
       <div class="panel-list">
       <?php foreach ($games as $game): ?>
-        <div class="panel-list-item">
-          <div class="post-card-head">
-            <a class="btn btn-outline" href="/game/<?= htmlspecialchars((string) ($game['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">Открыть</a>
+        <div class="panel-list-item panel-list-item--row">
+          <div class="panel-list-item__text">
+            <strong><?= htmlspecialchars((string) (($game['board_template_name'] ?? '') ?: 'Без шаблона'), ENT_QUOTES, 'UTF-8') ?></strong>
+            <div class="meta">
+              Статус: <?= htmlspecialchars((string) ($game['status'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
+              Игроков: <?= (int) ($game['players_count'] ?? 0) ?> ·
+              Финальные монеты: <?= (int) ($game['final_cash'] ?? 0) ?> ·
+              <?= htmlspecialchars($formatRuDate((string) ($game['created_at'] ?? '')), ENT_QUOTES, 'UTF-8') ?>
+            </div>
           </div>
-          <div class="meta">
-            Статус: <?= htmlspecialchars((string) ($game['status'] ?? ''), ENT_QUOTES, 'UTF-8') ?> ·
-            Игроков: <?= (int) ($game['players_count'] ?? 0) ?> ·
-            Финальные монеты: <?= (int) ($game['final_cash'] ?? 0) ?> ·
-            <?= htmlspecialchars($formatRuDate((string) ($game['created_at'] ?? '')), ENT_QUOTES, 'UTF-8') ?>
-          </div>
+          <a class="btn btn-outline" href="/game/<?= htmlspecialchars((string) ($game['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">Открыть</a>
         </div>
       <?php endforeach; ?>
       </div>

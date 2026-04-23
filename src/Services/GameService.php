@@ -74,8 +74,17 @@ final class GameService
         if ($maxPlayers === 1) {
             $allowBots = true;
         }
+        $boardTemplateId = null;
+        if (isset($data['board_template_id']) && (int) $data['board_template_id'] > 0) {
+            $boardTemplateId = (int) $data['board_template_id'];
+        } else {
+            $classic = $this->games->findBoardTemplateByName('Классическая Монополия');
+            if ($classic !== null) {
+                $boardTemplateId = (int) ($classic['id'] ?? 0);
+            }
+        }
         $gameId = $this->newUuidV4();
-        $game = $this->games->createGame($gameId, (int) $actor['sub'], $maxPlayers, $allowBots);
+        $game = $this->games->createGame($gameId, (int) $actor['sub'], $maxPlayers, $allowBots, $boardTemplateId > 0 ? $boardTemplateId : null);
 
         $seat = $this->games->getNextSeatNo($gameId);
         $player = $this->games->createPlayer(
@@ -121,10 +130,22 @@ final class GameService
             throw new \RuntimeException('Forbidden');
         }
 
+        $boardCells = [];
+        $templateId = (int) ($game['board_template_id'] ?? 0);
+        if ($templateId > 0) {
+            $tpl = $this->games->findBoardTemplateById($templateId);
+            if ($tpl !== null) {
+                $game['board_template_name'] = (string) ($tpl['name'] ?? '');
+            }
+        }
+        if ($templateId > 0) {
+            $boardCells = $this->games->listBoardCells($templateId);
+        }
         return [
             'game' => $game,
             'self' => $player,
             'players' => $this->games->listPlayers($gameId),
+            'board_cells' => $boardCells,
             'property_state' => $this->games->listPropertyStates($gameId),
             'chat' => $this->games->listChatMessages($gameId),
             'events' => $this->games->listEventsSince($gameId, 0, 300),
@@ -327,9 +348,20 @@ final class GameService
                     $jailTurns
                 );
                 $payload = array_merge(['dice' => [$d1, $d2], 'from_position' => $oldPos, 'position' => $newPos, 'cash' => $cash], $landing['payload']);
+                $turnOptions = $this->resolveTurnOptionsForTemplate($gameId, $oldPos, $newPos);
+                if ($turnOptions !== []) {
+                    $payload['turn_options'] = $turnOptions;
+                }
                 break;
             case 'end_turn':
                 $payload = ['ended_by' => (int) $player['id']];
+                break;
+            case 'choose_direction':
+                $direction = (string) ($data['direction'] ?? '');
+                if (!in_array($direction, ['left', 'straight', 'right'], true)) {
+                    throw new \InvalidArgumentException('Некорректное направление');
+                }
+                $payload = ['direction' => $direction];
                 break;
             case 'pay':
                 $toPlayerId = (int) ($data['to_player_id'] ?? 0);
@@ -757,6 +789,14 @@ final class GameService
         return $this->games->listBoardTemplates();
     }
 
+    public function listBoardTemplatesForNewGame(array $actor): array
+    {
+        if (!isset($actor['sub'])) {
+            throw new \RuntimeException('Unauthorized');
+        }
+        return $this->games->listBoardTemplates();
+    }
+
     public function createBoardTemplate(array $actor, array $data): array
     {
         if (($actor['role'] ?? '') !== 'admin') {
@@ -767,6 +807,208 @@ final class GameService
             throw new \InvalidArgumentException('Укажите название доски');
         }
         return $this->games->createBoardTemplate((int) $actor['sub'], $name, (bool) ($data['is_published'] ?? false));
+    }
+
+    public function getBoardTemplateEditorView(array $actor, ?int $templateId): array
+    {
+        if (($actor['role'] ?? '') !== 'admin') {
+            throw new \RuntimeException('Forbidden');
+        }
+        $template = null;
+        $cells = [];
+        if ($templateId !== null) {
+            $template = $this->games->findBoardTemplateById($templateId);
+            if ($template === null) {
+                throw new \RuntimeException('Not found');
+            }
+            $cells = $this->games->listBoardCells($templateId);
+        }
+        return [
+            'template' => $template,
+            'cells' => $cells,
+            'catalog' => $this->boardCardCatalog(),
+        ];
+    }
+
+    public function saveBoardTemplateEditor(array $actor, array $data, ?int $templateId): array
+    {
+        if (($actor['role'] ?? '') !== 'admin') {
+            throw new \RuntimeException('Forbidden');
+        }
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            throw new \InvalidArgumentException('Укажите название доски');
+        }
+        $published = $this->normalizeBool($data['is_published'] ?? false);
+        $cellsRaw = $data['cells'] ?? [];
+        if (is_string($cellsRaw)) {
+            $decoded = json_decode($cellsRaw, true);
+            $cellsRaw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($cellsRaw)) {
+            throw new \InvalidArgumentException('Некорректные данные клеток');
+        }
+        $cells = [];
+        foreach ($cellsRaw as $row) {
+            if (!is_array($row)) continue;
+            $extra = $row['extra_json'] ?? [];
+            if (is_string($extra)) {
+                $decoded = json_decode($extra, true);
+                $extra = is_array($decoded) ? $decoded : [];
+            }
+            $x = (int) (($row['x'] ?? $extra['x'] ?? -1));
+            $y = (int) (($row['y'] ?? $extra['y'] ?? -1));
+            if ($x < 0 || $x > 10 || $y < 0 || $y > 10) continue;
+            $cellType = trim((string) ($row['cell_type'] ?? 'property'));
+            $title = trim((string) ($row['title'] ?? ''));
+            if ($title === '') continue;
+            $buyPrice = max(0, (int) ($row['buy_price'] ?? 0));
+            $orientation = trim((string) ($row['orientation'] ?? $extra['orientation'] ?? ''));
+            if (!in_array($orientation, ['north', 'south', 'west', 'east'], true)) {
+                $orientation = '';
+            }
+            $position = ($y * 11) + $x;
+            $cells[] = [
+                'position' => $position,
+                'cell_type' => $cellType,
+                'title' => $title,
+                'buy_price' => $buyPrice,
+                'rent_rules' => [],
+                'extra_json' => ['x' => $x, 'y' => $y, 'group' => $row['group'] ?? $extra['group'] ?? null, 'orientation' => $orientation],
+            ];
+        }
+        $this->validateBoardPath($cells);
+        if ($templateId === null) {
+            $created = $this->games->createBoardTemplate((int) $actor['sub'], $name, $published);
+            $templateId = (int) ($created['id'] ?? 0);
+            if ($templateId <= 0) {
+                throw new \RuntimeException('Не удалось создать карту');
+            }
+            $template = $created;
+        } else {
+            $template = $this->games->findBoardTemplateById($templateId);
+            if ($template === null) {
+                throw new \RuntimeException('Not found');
+            }
+        }
+        $this->games->replaceBoardCells($templateId, $cells);
+        return ['id' => $templateId, 'name' => $name];
+    }
+
+    /** @param array<int,array{position:int,cell_type:string,title:string,buy_price:int,rent_rules:array,extra_json:array}> $cells */
+    private function validateBoardPath(array $cells): void
+    {
+        if (count($cells) < 4) {
+            throw new \InvalidArgumentException('На карте должно быть минимум 4 клетки');
+        }
+        $points = [];
+        foreach ($cells as $cell) {
+            $x = (int) (($cell['extra_json']['x'] ?? -1));
+            $y = (int) (($cell['extra_json']['y'] ?? -1));
+            $points["{$x}:{$y}"] = true;
+        }
+        $neighbors = [];
+        foreach (array_keys($points) as $key) {
+            [$x, $y] = array_map('intval', explode(':', $key));
+            $adj = [
+                ($x - 1) . ':' . $y,
+                ($x + 1) . ':' . $y,
+                $x . ':' . ($y - 1),
+                $x . ':' . ($y + 1),
+            ];
+            $deg = 0;
+            foreach ($adj as $k) {
+                if (isset($points[$k])) $deg++;
+            }
+            if ($deg < 2) {
+                throw new \InvalidArgumentException('Маршрут не должен иметь тупиков (каждая клетка минимум с двумя соседями)');
+            }
+            $neighbors[$key] = $adj;
+        }
+        $seen = [];
+        $stack = [array_key_first($points)];
+        while ($stack !== []) {
+            $k = array_pop($stack);
+            if ($k === null || isset($seen[$k])) continue;
+            $seen[$k] = true;
+            foreach ($neighbors[$k] ?? [] as $n) {
+                if (isset($points[$n]) && !isset($seen[$n])) $stack[] = $n;
+            }
+        }
+        if (count($seen) !== count($points)) {
+            throw new \InvalidArgumentException('Все клетки маршрута должны быть связаны');
+        }
+    }
+
+    private function boardCardCatalog(): array
+    {
+        $catalog = [];
+        foreach (self::BOARD as $pos => $space) {
+            $catalog[] = [
+                'id' => 'classic_' . $pos,
+                'title' => (string) ($space['name'] ?? ('#' . $pos)),
+                'cell_type' => (string) ($space['type'] ?? 'property'),
+                'buy_price' => (int) ($space['price'] ?? 0),
+                'group' => $space['group'] ?? null,
+                'unlimited' => in_array(($space['type'] ?? ''), ['chance', 'chest', 'free', 'tax'], true),
+            ];
+        }
+        return $catalog;
+    }
+
+    /** @return array<int,string> */
+    private function resolveTurnOptionsForTemplate(string $gameId, int $fromPos, int $toPos): array
+    {
+        $game = $this->games->findGameById($gameId);
+        $templateId = (int) ($game['board_template_id'] ?? 0);
+        if ($templateId <= 0) return [];
+        $cells = $this->games->listBoardCells($templateId);
+        if ($cells === []) return [];
+        $coords = [];
+        foreach ($cells as $cell) {
+            $p = (int) ($cell['position'] ?? -1);
+            if ($p < 0) continue;
+            $extra = $cell['extra_json'] ?? [];
+            if (is_string($extra)) {
+                $decoded = json_decode($extra, true);
+                $extra = is_array($decoded) ? $decoded : [];
+            }
+            $x = (int) ($extra['x'] ?? -1);
+            $y = (int) ($extra['y'] ?? -1);
+            if ($x < 0 || $y < 0) continue;
+            $coords[$p] = ['x' => $x, 'y' => $y];
+        }
+        if (!isset($coords[$toPos])) return [];
+        $cur = $coords[$toPos];
+        $prev = $coords[$fromPos] ?? null;
+        $neighbors = [];
+        foreach ($coords as $pos => $xy) {
+            if ($pos === $toPos) continue;
+            $dist = abs($xy['x'] - $cur['x']) + abs($xy['y'] - $cur['y']);
+            if ($dist === 1) $neighbors[$pos] = $xy;
+        }
+        if (count($neighbors) <= 2) return [];
+        if ($prev === null) return ['left', 'straight', 'right'];
+        $inX = $cur['x'] - $prev['x'];
+        $inY = $cur['y'] - $prev['y'];
+        if ($inX === 0 && $inY === 0) return ['left', 'straight', 'right'];
+        $out = [];
+        foreach ($neighbors as $xy) {
+            $vX = $xy['x'] - $cur['x'];
+            $vY = $xy['y'] - $cur['y'];
+            if ($vX === -$inX && $vY === -$inY) continue;
+            $cross = ($inX * $vY) - ($inY * $vX);
+            $dot = ($inX * $vX) + ($inY * $vY);
+            if ($cross > 0) $out['left'] = true;
+            elseif ($cross < 0) $out['right'] = true;
+            elseif ($dot > 0) $out['straight'] = true;
+        }
+        if ($out === []) return [];
+        $ordered = [];
+        foreach (['left', 'straight', 'right'] as $k) {
+            if (isset($out[$k])) $ordered[] = $k;
+        }
+        return $ordered;
     }
 
     public function adminGamesDashboard(array $actor): array

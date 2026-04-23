@@ -14,8 +14,10 @@ final class Jwt
         $now = time();
         $payload = array_merge($claims, [
             'iat' => $now,
-            'exp' => $now + $ttlSeconds,
         ]);
+        if ($ttlSeconds > 0) {
+            $payload['exp'] = $now + $ttlSeconds;
+        }
 
         $header = ['alg' => 'HS256', 'typ' => 'JWT'];
         $segments = [
@@ -48,7 +50,7 @@ final class Jwt
             return null;
         }
 
-        if (!isset($payload['exp']) || (int) $payload['exp'] < time()) {
+        if (isset($payload['exp']) && (int) $payload['exp'] < time()) {
             return null;
         }
 

@@ -95,6 +95,18 @@ trait AppRouteRegistration
         $r->map('POST', '#^/panel/game-boards$#', function (): void {
             $this->handleBoardTemplateCreate();
         });
+        $r->map('GET', '#^/panel/game-boards/new$#', function (): void {
+            $this->renderBoardTemplateEditor(null);
+        });
+        $r->map('GET', '#^/panel/game-boards/([0-9]+)/edit$#', function (array $m): void {
+            $this->renderBoardTemplateEditor((int) $m[1]);
+        });
+        $r->map('POST', '#^/panel/game-boards/new$#', function (): void {
+            $this->handleBoardTemplateSave(null);
+        });
+        $r->map('POST', '#^/panel/game-boards/([0-9]+)/edit$#', function (array $m): void {
+            $this->handleBoardTemplateSave((int) $m[1]);
+        });
         $r->map('GET', '#^/panel/categories$#', function (): void {
             $this->renderCategories();
         });

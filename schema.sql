@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS game_board_templates (
 CREATE TABLE IF NOT EXISTS game_board_cells (
   id BIGSERIAL PRIMARY KEY,
   board_template_id BIGINT NOT NULL REFERENCES game_board_templates(id) ON DELETE CASCADE,
-  position SMALLINT NOT NULL CHECK (position BETWEEN 0 AND 39),
+  position SMALLINT NOT NULL CHECK (position BETWEEN 0 AND 120),
   cell_type VARCHAR(24) NOT NULL,
   title VARCHAR(120) NOT NULL,
   buy_price INT NOT NULL DEFAULT 0,
@@ -229,6 +229,9 @@ CREATE TABLE IF NOT EXISTS game_board_cells (
   extra_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   UNIQUE (board_template_id, position)
 );
+
+ALTER TABLE game_board_cells DROP CONSTRAINT IF EXISTS game_board_cells_position_check;
+ALTER TABLE game_board_cells ADD CONSTRAINT game_board_cells_position_check CHECK (position BETWEEN 0 AND 120);
 
 CREATE TABLE IF NOT EXISTS game_property_state (
   id BIGSERIAL PRIMARY KEY,

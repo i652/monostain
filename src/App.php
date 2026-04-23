@@ -869,6 +869,9 @@ final class App
     private function setWebAuthCookie(string $token): void
     {
         $ttl = (int) Config::get('JWT_TTL_SECONDS', '3600');
+        if ($ttl <= 0) {
+            $ttl = 60 * 60 * 24 * 365 * 10; // keep auth effectively persistent until cookie cleanup
+        }
         setcookie('stain_auth', $token, array_merge($this->webAuthCookieOptions(), [
             'expires' => time() + $ttl,
         ]));
@@ -1082,6 +1085,7 @@ final class App
     private function renderNewGame(): void
     {
         $viewer = $this->requireAuth();
+        $boardTemplates = $this->gameService->listBoardTemplatesForNewGame($viewer);
         $title = 'Новая игра - Monostain';
         $description = 'Создание игры';
         require dirname(__DIR__) . '/templates/game_new.php';
@@ -1182,6 +1186,33 @@ final class App
             'is_published' => $published,
         ]);
         header('Location: /panel/game-boards?notice=' . rawurlencode('Карта создана'));
+        exit();
+    }
+
+    private function renderBoardTemplateEditor(?int $templateId): void
+    {
+        $viewer = $this->requireAuth();
+        $view = $this->gameService->getBoardTemplateEditorView($viewer, $templateId);
+        $boardTemplate = $view['template'];
+        $boardCells = $view['cells'];
+        $cardCatalog = $view['catalog'];
+        $title = ($templateId === null ? 'Новая карта' : 'Редактирование карты') . ' - Monostain';
+        $description = 'Редактор карт';
+        require dirname(__DIR__) . '/templates/game_board_editor.php';
+    }
+
+    private function handleBoardTemplateSave(?int $templateId): void
+    {
+        $actor = $this->requireAuth();
+        $cellsJson = (string) ($_POST['cells_json'] ?? '[]');
+        $name = (string) ($_POST['name'] ?? '');
+        $published = isset($_POST['is_published']) && (string) $_POST['is_published'] === '1';
+        $saved = $this->gameService->saveBoardTemplateEditor($actor, [
+            'name' => $name,
+            'is_published' => $published,
+            'cells' => $cellsJson,
+        ], $templateId);
+        header('Location: /panel/game-boards/' . (int) $saved['id'] . '/edit?notice=' . rawurlencode('Карта сохранена'));
         exit();
     }
 

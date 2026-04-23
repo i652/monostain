@@ -9,15 +9,16 @@ final class GameRepository
 {
     public function __construct(private readonly PDO $pdo) {}
 
-    public function createGame(string $gameId, int $createdBy, int $maxPlayers, bool $allowBots): array
+    public function createGame(string $gameId, int $createdBy, int $maxPlayers, bool $allowBots, ?int $boardTemplateId = null): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO games (id, created_by, max_players, allow_bots, status)
-             VALUES (:id, :created_by, :max_players, :allow_bots, :status)
+            'INSERT INTO games (id, created_by, board_template_id, max_players, allow_bots, status)
+             VALUES (:id, :created_by, :board_template_id, :max_players, :allow_bots, :status)
              RETURNING *'
         );
         $stmt->bindValue(':id', $gameId);
         $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
+        $stmt->bindValue(':board_template_id', $boardTemplateId, $boardTemplateId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
         $stmt->bindValue(':max_players', $maxPlayers, PDO::PARAM_INT);
         $stmt->bindValue(':allow_bots', $allowBots, PDO::PARAM_BOOL);
         $stmt->bindValue(':status', 'waiting');
@@ -41,6 +42,7 @@ final class GameRepository
             'SELECT g.*,
                     gp.cash AS final_cash,
                     gp.nickname_snapshot,
+                    bt.name AS board_template_name,
                     (
                       SELECT COUNT(*)::int
                       FROM game_players p2
@@ -48,6 +50,7 @@ final class GameRepository
                     ) AS players_count
              FROM games g
              JOIN game_players gp ON gp.game_id = g.id
+             LEFT JOIN game_board_templates bt ON bt.id = g.board_template_id
              WHERE gp.user_id = :user_id
              ORDER BY g.created_at DESC
              LIMIT :limit'
@@ -364,6 +367,67 @@ final class GameRepository
     {
         $stmt = $this->pdo->query('SELECT * FROM game_board_templates ORDER BY created_at DESC');
         return $stmt->fetchAll() ?: [];
+    }
+
+    public function findBoardTemplateByName(string $name): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM game_board_templates WHERE LOWER(name) = LOWER(:name) LIMIT 1');
+        $stmt->execute(['name' => $name]);
+        $row = $stmt->fetch();
+        return $row ? (array) $row : null;
+    }
+
+    public function findBoardTemplateById(int $templateId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM game_board_templates WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $templateId]);
+        $row = $stmt->fetch();
+        return $row ? (array) $row : null;
+    }
+
+    public function listBoardCells(int $templateId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT position, cell_type, title, buy_price, rent_rules, extra_json
+             FROM game_board_cells
+             WHERE board_template_id = :template_id
+             ORDER BY position ASC'
+        );
+        $stmt->execute(['template_id' => $templateId]);
+        return $stmt->fetchAll() ?: [];
+    }
+
+    /** @param array<int, array{position:int,cell_type:string,title:string,buy_price:int,rent_rules:array,extra_json:array}> $cells */
+    public function replaceBoardCells(int $templateId, array $cells): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $del = $this->pdo->prepare('DELETE FROM game_board_cells WHERE board_template_id = :template_id');
+            $del->execute(['template_id' => $templateId]);
+            if ($cells !== []) {
+                $ins = $this->pdo->prepare(
+                    'INSERT INTO game_board_cells (board_template_id, position, cell_type, title, buy_price, rent_rules, extra_json)
+                     VALUES (:board_template_id, :position, :cell_type, :title, :buy_price, :rent_rules::jsonb, :extra_json::jsonb)'
+                );
+                foreach ($cells as $cell) {
+                    $ins->execute([
+                        'board_template_id' => $templateId,
+                        'position' => (int) $cell['position'],
+                        'cell_type' => (string) $cell['cell_type'],
+                        'title' => (string) $cell['title'],
+                        'buy_price' => (int) $cell['buy_price'],
+                        'rent_rules' => json_encode((array) $cell['rent_rules'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'extra_json' => json_encode((array) $cell['extra_json'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    ]);
+                }
+            }
+            $touch = $this->pdo->prepare('UPDATE game_board_templates SET updated_at = NOW() WHERE id = :id');
+            $touch->execute(['id' => $templateId]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 
     public function countGamesToday(): int

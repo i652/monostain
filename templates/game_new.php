@@ -7,6 +7,14 @@ ob_start();
   <h1>Новая игра</h1>
   <div class="panel-block">
     <form id="new-game-form" class="quick-form panel-form" autocomplete="off">
+      <label for="game_board_template">Карта</label>
+      <select id="game_board_template" name="board_template_id">
+        <?php foreach (($boardTemplates ?? []) as $tpl): ?>
+          <option value="<?= (int) ($tpl['id'] ?? 0) ?>" <?= mb_strtolower((string) ($tpl['name'] ?? '')) === 'классическая монополия' ? 'selected' : '' ?>>
+            <?= htmlspecialchars((string) ($tpl['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
       <label for="game_max_players">Количество участников (1-8)</label>
       <select id="game_max_players" name="max_players">
         <?php for ($i = 1; $i <= 8; $i++): ?>
