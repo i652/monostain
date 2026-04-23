@@ -1936,7 +1936,8 @@ body:has(#auth-popup:target) {
 .game-room{display:grid;gap:16px}
 .game-room__header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .game-room__tools{display:flex;gap:8px;flex-wrap:wrap}
-.game-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.game-toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.game-tabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 .game-tab{font-size:1rem;font-weight:400}
 .game-tab.is-active{background:#cde6d0;color:#090a0e;border-color:#090a0e}
 .game-panel{display:none}
@@ -1990,9 +1991,18 @@ body:has(#auth-popup:target) {
 .deed-money-wrap{display:inline-flex;align-items:baseline;gap:3px;font-weight:800;white-space:nowrap}
 .deed-currency{font-weight:900;text-decoration:underline;text-decoration-style:double;text-underline-offset:3px}
 .deed-build-costs{margin-top:12px;padding-top:10px;border-top:1px solid #c9c9c9;font-size:13px;line-height:1.45}
+.deed-build-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.deed-build-row + .deed-build-row{margin-top:4px}
+.deed-build-label{font-weight:600}
+.deed-build-right{text-align:right}
+.deed-build-sub{display:block;font-size:11px;color:#555;font-weight:500;margin-top:2px}
 .deed-underline{text-decoration:underline;text-underline-offset:3px;font-weight:800}
 .deed-foot{display:block;font-size:11px;color:#555;font-weight:500;margin-top:2px}
 .deed-price-line{margin-top:10px;font-size:13px;font-weight:700}
+.deed-sell-btn{appearance:none;background:#c62828;border:1px solid #090a0e;border-radius:.25rem;box-shadow:.25rem .25rem 0 #090a0e;color:#fff;font-size:1rem;padding:.45rem .75rem;margin-top:10px;cursor:pointer;width:100%}
+.deed-mortgage-btn,.deed-redeem-btn{appearance:none;border:1px solid #090a0e;border-radius:.25rem;box-shadow:.25rem .25rem 0 #090a0e;color:#fff;font-size:1rem;padding:.45rem .75rem;margin-top:10px;cursor:pointer;width:100%}
+.deed-mortgage-btn{background:#ef8a17}
+.deed-redeem-btn{background:#0a66ff}
 .deed-card--generic .deed-card__plain-title{margin:0 0 8px;text-align:center;text-transform:uppercase;font-size:15px}
 .deed-generic-dl{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:0;font-size:13px}
 .deed-generic-details{margin:10px 0 0;font-size:13px;line-height:1.35;color:#333}
@@ -2018,13 +2028,13 @@ body:has(#auth-popup:target) {
 .ledger-row__balance{font-size:12px;color:#0b5;white-space:nowrap}
 #stats-box,#trade-box,#rules-box,#history-box,#timeline-box,#ledger-box{font-size:14px;line-height:1.35}
 
-.board{--board-size:min(96vw,68.75rem);--cell:calc(var(--board-size) / 11);--prop-bar:1.65rem;background:#090a0e;border:.1875rem solid #090a0e;border-radius:18px;overflow:hidden;display:grid;grid-gap:.125rem;grid-template-columns:var(--cell) 1fr var(--cell);grid-template-rows:var(--cell) 1fr var(--cell);position:relative;width:var(--board-size);height:var(--board-size);margin:0;font-family:"Noto Sans",sans-serif;text-transform:uppercase}
+.board{--board-size:min(96vw,68.75rem);--cell:calc(var(--board-size) / 11);--prop-bar:1.65rem;background:#090a0e;border:.1875rem solid #090a0e;border-radius:18px;overflow:hidden;display:grid;grid-gap:.125rem;grid-template-columns:var(--cell) 1fr var(--cell);grid-template-rows:var(--cell) 1fr var(--cell);position:relative;width:var(--board-size);height:var(--board-size);margin:0;font-family:"Noto Sans",sans-serif}
 .board .corner,.board .space,.board .center{background:#cde6d0;color:#090a0e}
 .board .space{position:relative;overflow:visible}
 .board .row{display:grid;grid-gap:.125rem;position:relative}
 .board .row.horizontal{grid-template-columns:repeat(9,minmax(0,1fr));grid-template-rows:1fr}
 .board .row.vertical{grid-template-columns:1fr;grid-template-rows:repeat(9,minmax(0,1fr))}
-.board .space .container{display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;line-height:1;height:100%;padding:4px;position:relative;z-index:2}
+.board .space .container{display:flex;flex-direction:column;justify-content:space-between;align-items:center;text-align:center;height:100%;padding:4px;position:relative;z-index:2}
 .board .space .name,.board .space .label{font-size:.5rem;font-weight:700;letter-spacing:-.03em}
 .board .space .cost{font-size:.56rem;font-weight:700;padding-bottom:2px}
 .board .space.railroad .container::after{content:"R/R";font-size:1rem;line-height:1;font-weight:800}
@@ -2052,20 +2062,22 @@ body:has(#auth-popup:target) {
 .board .space{cursor:pointer}
 .board .space:hover{filter:brightness(.94)}
 .board .space.property .name{font-weight:800}
-.build-icons{position:absolute;display:flex;gap:3px;z-index:4;pointer-events:none;align-items:center;justify-content:center}
-.build-icons--south{top:calc(-42px);left:50%;transform:translateX(-50%);flex-direction:row}
+.build-icons{position:absolute;display:flex;gap:6px;z-index:4;pointer-events:none;align-items:center;justify-content:center}
+.build-icons--south{top:calc(-72px);left:50%;transform:translateX(-50%);flex-direction:row}
 .build-icons--south .build-icon{transform:none}
-.build-icons--north{bottom:calc(-42px);left:50%;transform:translateX(-50%);flex-direction:row}
+.build-icons--north{bottom:calc(-72px);left:50%;transform:translateX(-50%);flex-direction:row}
 .build-icons--north .build-icon{transform:rotate(180deg)}
-.build-icons--west{right:calc(-42px);top:50%;transform:translateY(-50%);flex-direction:row}
+.build-icons--west{right:calc(-72px);top:50%;transform:translateY(-50%);flex-direction:row}
 .build-icons--west .build-icon{transform:rotate(90deg)}
-.build-icons--east{left:calc(-42px);top:50%;transform:translateY(-50%);flex-direction:row}
+.build-icons--east{left:calc(-72px);top:50%;transform:translateY(-50%);flex-direction:row}
 .build-icons--east .build-icon{transform:rotate(-90deg)}
-.build-icon{display:inline-block;width:30px;height:30px;background:var(--owner-color,#0a0)}
+.build-icon{display:inline-block;width:60px;height:60px;background:var(--owner-color,#0a0)}
 .build-icon.house{-webkit-mask:url("/assets/images/house.svg") no-repeat center / contain;mask:url("/assets/images/house.svg") no-repeat center / contain}
-.build-icon.hotel{background:#d11c1c;-webkit-mask:url("/assets/images/hotel.svg") no-repeat center / contain;mask:url("/assets/images/hotel.svg") no-repeat center / contain}
+.build-icon.hotel{background:var(--owner-color,#0a0);-webkit-mask:url("/assets/images/hotel.svg") no-repeat center / contain;mask:url("/assets/images/hotel.svg") no-repeat center / contain}
 .build-icon{cursor:pointer}
-.build-plus{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;border:1px solid #090a0e;background:#fff;color:#090a0e;font-size:13px;line-height:1;font-weight:800;cursor:pointer;padding:0;pointer-events:auto}
+.build-icon-stack{position:relative;display:inline-flex;align-items:center;justify-content:center;width:60px;height:60px}
+.build-icon-count{position:absolute;font-size:22px;font-weight:900;color:#fff;text-shadow:0 0 3px #000;pointer-events:none}
+.build-plus{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;border:1px solid #090a0e;background:#fff;color:#090a0e;font-size:18px;line-height:1;font-weight:800;cursor:pointer;padding:0;pointer-events:auto}
 .board .corner{display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden;position:relative}
 .board .corner.se .container{transform:rotate(-45deg)}
 .board .corner.se .symbol.arrow{position:absolute;right:.6rem;bottom:.3rem;font-size:1.5rem;font-weight:800;color:#ed1b24}
@@ -2078,22 +2090,28 @@ body:has(#auth-popup:target) {
 .board .corner.nw .container{transform:translate(5%,5%) rotate(135deg)}
 .board .corner.ne .container{transform:rotate(-135deg)}
 .board .center{display:flex;align-items:center;justify-content:center;position:relative}
-.board .logo{background:linear-gradient(#ff8a8a,#d40000,#8b0000);border:.125rem solid #ed1b24;outline:.25rem solid #090a0e;color:#fff;font-size:clamp(2rem,4.8vw,4.2rem);font-weight:700;line-height:1;padding:.6rem 1rem .4rem;letter-spacing:-.05em}
+.board .logo{display:none}
+
+.space-owner-status{position:absolute;left:0;right:0;bottom:0;height:var(--prop-bar);display:flex;align-items:center;justify-content:center;background:#fff;color:#111;font-size:.48rem;font-weight:700;text-transform:none;z-index:3;border-top:1px solid #111}
+:root[data-theme='night'] .space-owner-status{background:#1e1f22;color:#f3f3f3;border-top:1px solid #666}
 .board .deck-outline{border:.125rem dashed #090a0e;width:8rem;height:5.25rem;position:absolute}
 .board .deck-outline.chest{top:3rem;left:2rem;transform:rotate(135deg)}
 .board .deck-outline.chance{right:2rem;bottom:3rem;transform:rotate(-45deg)}
 .board .player-info{position:absolute;top:2.2rem;right:2.2rem;text-align:right;font-size:.95rem}
 .board .player-info .value{font-size:1.25rem;font-weight:800}
 .board .player-info .money{font-size:1.2rem;font-weight:800}
-.board .main-action{display:flex;justify-content:center;position:absolute;top:33%;left:50%;transform:translate(-50%,-50%);width:100%}
-.board .main-action .action{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap}
-.board .main-action .action.build{position:absolute;left:50%;top:45%;transform:translateX(-50%);margin-left:0;z-index:5}
-.board .main-action .action.hidden{display:none !important}
-.board .main-action .action.rent .full-width,
-.board .main-action .action.build .full-width{flex-basis:100%;text-align:center}
-.board .main-action button{appearance:none;background:#0072bb;border:1px solid #090a0e;border-radius:.25rem;box-shadow:.25rem .25rem 0 #090a0e;color:#fff;font-size:1.1rem;padding:.45rem .75rem}
-.board .main-action button:active{box-shadow:none;transform:translate(.25rem,.25rem)}
-.board .main-action .full-width{flex-basis:100%;text-align:center}
+.main-action--top{display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;flex:1 1 auto}
+.main-action--top .action{display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap}
+.main-action--top .action.hidden{display:none !important}
+.main-action--top .action.rent .full-width,
+.main-action--top .action.build .full-width{flex-basis:100%;text-align:left}
+.main-action--top button{appearance:none;background:#0072bb;border:1px solid #090a0e;border-radius:.25rem;box-shadow:.25rem .25rem 0 #090a0e;color:#fff;font-size:1rem;padding:.45rem .75rem}
+.main-action--top button:active{box-shadow:none;transform:translate(.25rem,.25rem)}
+.main-action--top .full-width{flex-basis:100%;text-align:left}
+.main-action--top .buyout-offer-input{width:120px;padding:8px 10px;border:1px solid #090a0e;border-radius:8px;background:#fff;color:#090a0e}
+.trade-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.trade-list{display:grid;gap:6px;margin-top:8px;max-height:220px;overflow:auto}
+.trade-card{display:flex;align-items:center;gap:6px}
 .board .dice{position:absolute;top:62%;left:50%;transform:translate(-50%,0);display:flex;flex-direction:column;align-items:center;gap:4px}
 .board .dice-group{display:flex;gap:12px}
 .board .die{background:#f5f5f5;border:1px solid #6666;border-radius:8px;box-shadow:inset 0 2px #fff,inset 4px 0 #ddd,inset -4px 0 #ddd,inset 0 -4px #ccc,0 0 1rem #3333;width:48px;height:48px;padding:8px;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;align-items:center}

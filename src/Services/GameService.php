@@ -495,6 +495,9 @@ final class GameService
                 if ($prop === null || (int) ($prop['owner_player_id'] ?? 0) !== (int) $player['id']) {
                     throw new \InvalidArgumentException('Вы не владелец этой клетки');
                 }
+                if ($this->normalizeBool($prop['mortgaged'] ?? false)) {
+                    throw new \InvalidArgumentException('Нельзя строить на заложенной клетке');
+                }
                 if (!$this->ownsWholeGroup($gameId, (int) $player['id'], (int) ($space['group'] ?? -1))) {
                     throw new \InvalidArgumentException('Строительство возможно только при полном наборе группы');
                 }
@@ -593,7 +596,122 @@ final class GameService
                 ];
                 break;
             case 'trade':
-                $payload = ['initiator_player_id' => (int) $player['id']];
+                $targetPlayerId = (int) ($data['target_player_id'] ?? 0);
+                $offerPositions = $this->normalizeIntArray($data['offer_positions'] ?? []);
+                $requestPositions = $this->normalizeIntArray($data['request_positions'] ?? []);
+                $cashOffer = max(0, (int) ($data['cash_offer'] ?? 0));
+                $approvedByTarget = $this->normalizeBool($data['approved_by_target'] ?? false);
+                if ($targetPlayerId <= 0 || $targetPlayerId === (int) $player['id']) {
+                    throw new \InvalidArgumentException('Укажите другого игрока для обмена');
+                }
+                if ($offerPositions === [] || $requestPositions === []) {
+                    throw new \InvalidArgumentException('Выберите карточки для обмена с обеих сторон');
+                }
+                $target = null;
+                foreach ($allPlayers as $p) {
+                    if ((int) $p['id'] === $targetPlayerId) {
+                        $target = $p;
+                        break;
+                    }
+                }
+                if ($target === null) {
+                    throw new \InvalidArgumentException('Целевой игрок не найден');
+                }
+                $offerValue = 0;
+                $requestValue = 0;
+                foreach ($offerPositions as $pos) {
+                    $state = $this->games->findPropertyState($gameId, $pos);
+                    if ((int) ($state['owner_player_id'] ?? 0) !== (int) $player['id']) {
+                        throw new \InvalidArgumentException('В списке обмена есть чужая карточка');
+                    }
+                    $offerValue += $this->propertyValue($pos, $state);
+                }
+                foreach ($requestPositions as $pos) {
+                    $state = $this->games->findPropertyState($gameId, $pos);
+                    if ((int) ($state['owner_player_id'] ?? 0) !== $targetPlayerId) {
+                        throw new \InvalidArgumentException('Запрошена карточка, не принадлежащая выбранному игроку');
+                    }
+                    $requestValue += $this->propertyValue($pos, $state);
+                }
+                $totalOfferValue = $offerValue + $cashOffer;
+                if ($totalOfferValue < $requestValue) {
+                    throw new \InvalidArgumentException('Предложение обмена неравнозначно');
+                }
+                if ((int) $player['cash'] < $cashOffer) {
+                    throw new \InvalidArgumentException('Недостаточно средств для денежной доплаты');
+                }
+                if (!$approvedByTarget) {
+                    $payload = [
+                        'initiator_player_id' => (int) $player['id'],
+                        'target_player_id' => $targetPlayerId,
+                        'offer_positions' => $offerPositions,
+                        'request_positions' => $requestPositions,
+                        'cash_offer' => $cashOffer,
+                        'trade_declined' => true,
+                    ];
+                    break;
+                }
+                foreach ($offerPositions as $pos) {
+                    $this->games->transferProperty($gameId, $pos, $targetPlayerId);
+                }
+                foreach ($requestPositions as $pos) {
+                    $this->games->transferProperty($gameId, $pos, (int) $player['id']);
+                }
+                $initiatorCash = (int) $player['cash'] - $cashOffer;
+                $targetCash = (int) $target['cash'] + $cashOffer;
+                $this->games->updatePlayerState((int) $player['id'], $initiatorCash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $this->games->updatePlayerState((int) $target['id'], $targetCash, (int) $target['position'], $this->normalizeBool($target['in_jail'] ?? false), (int) $target['jail_turns']);
+                $payload = [
+                    'initiator_player_id' => (int) $player['id'],
+                    'target_player_id' => $targetPlayerId,
+                    'offer_positions' => $offerPositions,
+                    'request_positions' => $requestPositions,
+                    'cash_offer' => $cashOffer,
+                    'initiator_cash' => $initiatorCash,
+                    'target_cash' => $targetCash,
+                    'trade_approved' => true,
+                ];
+                break;
+            case 'mortgage':
+                $position = (int) ($data['position'] ?? $player['position']);
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (!in_array(($space['type'] ?? ''), ['property', 'railroad', 'utility'], true)) {
+                    throw new \InvalidArgumentException('Эту клетку нельзя заложить');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                if ($prop === null || (int) ($prop['owner_player_id'] ?? 0) !== (int) $player['id']) {
+                    throw new \InvalidArgumentException('Вы не владелец этой клетки');
+                }
+                if ($this->normalizeBool($prop['mortgaged'] ?? false)) {
+                    throw new \InvalidArgumentException('Клетка уже в залоге');
+                }
+                $credit = (int) floor($this->propertyValue($position, $prop) / 2);
+                $cash = (int) $player['cash'] + $credit;
+                $this->games->updatePropertyMortgage($gameId, $position, true);
+                $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $payload = ['position' => $position, 'mortgaged' => true, 'credit' => $credit, 'cash' => $cash];
+                break;
+            case 'redeem_mortgage':
+                $position = (int) ($data['position'] ?? $player['position']);
+                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                if (!in_array(($space['type'] ?? ''), ['property', 'railroad', 'utility'], true)) {
+                    throw new \InvalidArgumentException('Эту клетку нельзя выкупить из залога');
+                }
+                $prop = $this->games->findPropertyState($gameId, $position);
+                if ($prop === null || (int) ($prop['owner_player_id'] ?? 0) !== (int) $player['id']) {
+                    throw new \InvalidArgumentException('Вы не владелец этой клетки');
+                }
+                if (!$this->normalizeBool($prop['mortgaged'] ?? false)) {
+                    throw new \InvalidArgumentException('Клетка не находится в залоге');
+                }
+                $redeemCost = $this->redeemMortgageCost($gameId, (int) $player['id'], $position, $prop);
+                if ((int) $player['cash'] < $redeemCost) {
+                    throw new \InvalidArgumentException('Недостаточно средств для выкупа из залога');
+                }
+                $cash = (int) $player['cash'] - $redeemCost;
+                $this->games->updatePropertyMortgage($gameId, $position, false);
+                $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
+                $payload = ['position' => $position, 'mortgaged' => false, 'redeem_cost' => $redeemCost, 'cash' => $cash];
                 break;
             default:
                 throw new \InvalidArgumentException('Неизвестная команда');
@@ -711,10 +829,11 @@ final class GameService
         } elseif (in_array(($space['type'] ?? ''), ['property', 'railroad', 'utility'], true)) {
             $state = $this->games->findPropertyState($gameId, $position);
             $ownerPlayerId = (int) ($state['owner_player_id'] ?? 0);
+            $mortgaged = $this->normalizeBool($state['mortgaged'] ?? false);
             if ($ownerPlayerId <= 0) {
                 $payload['offer_purchase'] = true;
                 $payload['price'] = (int) ($space['price'] ?? 0);
-            } elseif ($ownerPlayerId !== (int) $player['id']) {
+            } elseif ($ownerPlayerId !== (int) $player['id'] && !$mortgaged) {
                 $rent = $this->calculateRent($space, $state);
                 $buildingCost = (int) ($space['building_cost'] ?? 0);
                 $houses = (int) ($state['houses'] ?? 0);
@@ -729,8 +848,9 @@ final class GameService
                 $ownsGroup = $this->ownsWholeGroup($gameId, (int) $player['id'], (int) ($space['group'] ?? -1));
                 $houses = (int) ($state['houses'] ?? 0);
                 $hasHotel = $this->normalizeBool($state['has_hotel'] ?? false);
-                $payload['can_build_house'] = $ownsGroup && !$hasHotel && $houses < 4;
-                $payload['can_build_hotel'] = $ownsGroup && !$hasHotel && $houses >= 4;
+                $isMortgaged = $this->normalizeBool($state['mortgaged'] ?? false);
+                $payload['can_build_house'] = $ownsGroup && !$isMortgaged && !$hasHotel && $houses < 4;
+                $payload['can_build_hotel'] = $ownsGroup && !$isMortgaged && !$hasHotel && $houses >= 4;
                 $payload['building_cost'] = (int) ($space['building_cost'] ?? 0);
             }
         } elseif (in_array(($space['type'] ?? ''), ['chance', 'chest'], true)) {
@@ -904,5 +1024,86 @@ final class GameService
             }
         }
         return true;
+    }
+
+    private function propertyValue(int $position, ?array $state): int
+    {
+        $space = self::BOARD[$position] ?? null;
+        if ($space === null) {
+            return 0;
+        }
+        $price = (int) ($space['price'] ?? 0);
+        $buildCost = (int) ($space['building_cost'] ?? 0);
+        $houses = (int) ($state['houses'] ?? 0);
+        $hasHotel = $this->normalizeBool($state['has_hotel'] ?? false);
+        $buildingsValue = $buildCost * ($houses + ($hasHotel ? 5 : 0));
+        return $price + $buildingsValue;
+    }
+
+    /** @return int[] */
+    private function normalizeIntArray(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+        $result = [];
+        foreach ($value as $item) {
+            $n = (int) $item;
+            if ($n >= 0) {
+                $result[] = $n;
+            }
+        }
+        return array_values(array_unique($result));
+    }
+
+    private function redeemMortgageCost(string $gameId, int $ownerPlayerId, int $position, ?array $prop): int
+    {
+        $baseCost = (int) floor($this->propertyValue($position, $prop) / 2);
+        $events = $this->games->listEventsSince($gameId, 0, 1_000_000);
+        $mortgageSeq = 0;
+        foreach ($events as $ev) {
+            if (($ev['event_type'] ?? '') !== 'command_mortgage') {
+                continue;
+            }
+            if ((int) ($ev['actor_player_id'] ?? 0) !== $ownerPlayerId) {
+                continue;
+            }
+            $payload = [];
+            try {
+                $payload = json_decode((string) ($ev['payload_json'] ?? '{}'), true, 512, JSON_THROW_ON_ERROR);
+            } catch (\Throwable) {
+                $payload = [];
+            }
+            if ((int) ($payload['position'] ?? -1) === $position) {
+                $mortgageSeq = (int) ($ev['event_seq'] ?? 0);
+            }
+        }
+        if ($mortgageSeq <= 0) {
+            return $baseCost;
+        }
+        $passes = 0;
+        foreach ($events as $ev) {
+            if ((int) ($ev['event_seq'] ?? 0) <= $mortgageSeq) {
+                continue;
+            }
+            if (($ev['event_type'] ?? '') !== 'command_roll') {
+                continue;
+            }
+            if ((int) ($ev['actor_player_id'] ?? 0) !== $ownerPlayerId) {
+                continue;
+            }
+            $payload = [];
+            try {
+                $payload = json_decode((string) ($ev['payload_json'] ?? '{}'), true, 512, JSON_THROW_ON_ERROR);
+            } catch (\Throwable) {
+                $payload = [];
+            }
+            $from = (int) ($payload['from_position'] ?? -1);
+            $to = (int) ($payload['position'] ?? -1);
+            if ($from >= 0 && $to >= 0 && $to < $from) {
+                $passes++;
+            }
+        }
+        return $baseCost + ($passes * 200);
     }
 }

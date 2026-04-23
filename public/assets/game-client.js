@@ -47,6 +47,8 @@
       command_buyout: "Выкуп собственности",
       command_build: "Строительство",
       command_sell_building: "Продажа постройки",
+      command_mortgage: "Залог карточки",
+      command_redeem_mortgage: "Выкуп из залога",
     };
     return map[type] || "Событие";
   }
@@ -166,7 +168,7 @@
   const tokenColors = ["#e11d48", "#2563eb", "#f59e0b", "#16a34a", "#7c3aed", "#0ea5e9", "#ef4444", "#84cc16"];
   const playerColorById = new Map();
   const processedEventSeq = new Set();
-  const financeEventTypes = new Set(["command_pay", "command_buy", "command_sell", "command_pay_bail", "command_pay_rent", "command_buyout", "command_build", "command_sell_building", "property_bought", "property_sold", "trade_completed", "tax_paid", "rent_paid"]);
+  const financeEventTypes = new Set(["command_pay", "command_buy", "command_sell", "command_pay_bail", "command_pay_rent", "command_buyout", "command_build", "command_sell_building", "command_trade", "command_mortgage", "command_redeem_mortgage", "property_bought", "property_sold", "trade_completed", "tax_paid", "rent_paid"]);
   const groupColorClass = { 0: "group-0", 1: "group-1", 2: "group-2", 3: "group-3", 4: "group-4", 5: "group-5", 6: "group-6", 7: "group-7" };
   const allEvents = [];
   let sinceSeq = 0;
@@ -184,12 +186,14 @@
   const purchaseName = document.querySelector(".main-action .action.purchase .name");
   const purchaseCost = document.querySelector(".main-action .action.purchase .cost-amount");
   const rentAmount = document.querySelector(".main-action .action.rent .rent-amount");
+  const buyoutOfferInput = document.querySelector(".main-action .action.rent .buyout-offer-input");
   let currentRentDue = 0;
   let currentBuyoutMin = 0;
   let pendingBuildType = "";
   let buildablePositions = new Set();
   let autoEndTurnInFlight = false;
   let suppressTransientModals = true;
+  let buyoutInputVisible = false;
   renderTokens();
   renderRightPanel();
   tabs.forEach((tab) => {
@@ -300,8 +304,13 @@
       if (toId > 0 && Number.isFinite(Number(payload.to_cash))) setPlayerCash(toId, payload.to_cash);
       return;
     }
-    if (type === "command_buy" || type === "command_pay_bail" || type === "command_build" || type === "command_sell_building") {
+    if (type === "command_buy" || type === "command_pay_bail" || type === "command_build" || type === "command_sell_building" || type === "command_mortgage" || type === "command_redeem_mortgage") {
       if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
+      return;
+    }
+    if (type === "command_trade") {
+      if (Number.isFinite(Number(payload.initiator_cash))) setPlayerCash(Number(payload.initiator_player_id || actorId), payload.initiator_cash);
+      if (Number.isFinite(Number(payload.target_cash))) setPlayerCash(Number(payload.target_player_id || 0), payload.target_cash);
       return;
     }
     if (type === "command_sell" && Number.isFinite(Number(payload.cash))) {
@@ -372,7 +381,7 @@
           if (rentPaid > 0 && toPlayerId > 0) {
             cashByPlayer.set(toPlayerId, Number(cashByPlayer.get(toPlayerId) || 0) + rentPaid);
           }
-        } else if (["command_buy", "command_sell", "command_pay_bail", "command_build", "command_sell_building", "command_buyout"].includes(eventType) && Number.isFinite(Number(payload.cash))) {
+        } else if (["command_buy", "command_sell", "command_pay_bail", "command_build", "command_sell_building", "command_buyout", "command_mortgage", "command_redeem_mortgage"].includes(eventType) && Number.isFinite(Number(payload.cash))) {
           cashByPlayer.set(actorId, Number(payload.cash));
           if (eventType === "command_buyout" && payload.buyout_approved) {
             const sellerId = Number(payload.seller_player_id || 0);
@@ -464,6 +473,15 @@
     if (eventObj.event_type === "command_sell_building") {
       return `Продана постройка (${payload.sell_type === "hotel" ? "отель" : "дом"}) на клетке #${payload.position}`;
     }
+    if (eventObj.event_type === "command_mortgage") {
+      return `Карточка #${payload.position} заложена банку (+${payload.credit || 0})`;
+    }
+    if (eventObj.event_type === "command_redeem_mortgage") {
+      return `Карточка #${payload.position} выкуплена из залога (-${payload.redeem_cost || 0})`;
+    }
+    if (eventObj.event_type === "command_trade") {
+      return payload.trade_approved ? "Обмен карточками завершён" : "Обмен отклонён";
+    }
     if (eventObj.event_type === "chat_sent") {
       return `${actorName(eventObj)}: ${payload.message || "Сообщение в чат"}`;
     }
@@ -517,6 +535,8 @@
         currentRentDue = 0;
         currentBuyoutMin = 0;
         if (rentAction) rentAction.classList.add("hidden");
+        if (buyoutOfferInput) buyoutOfferInput.classList.add("hidden");
+        buyoutInputVisible = false;
         if (buildAction) buildAction.classList.add("hidden");
         if (rollAction) rollAction.classList.add("hidden");
         if (endAction) endAction.classList.add("hidden");
@@ -535,6 +555,8 @@
           if (endAction) endAction.classList.add("hidden");
         } else {
           if (rentAction) rentAction.classList.add("hidden");
+          if (buyoutOfferInput) buyoutOfferInput.classList.add("hidden");
+          buyoutInputVisible = false;
           const actorPlayerId = Number(e.actor_player_id || 0);
           const buildFlags = getBuildAvailability(actorPlayerId);
           const canHouse = (buildFlags.canHouse || Boolean(payload.can_build_house)) && canAffordAnyBuild(actorPlayerId, "house");
@@ -588,6 +610,8 @@
       if (endAction) endAction.classList.add("hidden");
       if (purchaseAction) purchaseAction.classList.add("hidden");
       if (rentAction) rentAction.classList.add("hidden");
+      if (buyoutOfferInput) buyoutOfferInput.classList.add("hidden");
+      buyoutInputVisible = false;
       if (buildAction) buildAction.classList.add("hidden");
       if (playerIdsInOrder.length > 0) {
         controlIndex = (controlIndex + 1) % playerIdsInOrder.length;
@@ -709,6 +733,8 @@
         });
         ingestServerEvent(ev);
         if (rentAction) rentAction.classList.add("hidden");
+        if (buyoutOfferInput) buyoutOfferInput.classList.add("hidden");
+        buyoutInputVisible = false;
         if (endAction) endAction.classList.remove("hidden");
       } catch (err) {
         showPopup(toRuError(err.message || "Не удалось оплатить ренту"));
@@ -718,18 +744,35 @@
   const buyoutBtn = document.querySelector(".buyout-property");
   if (buyoutBtn) {
     buyoutBtn.addEventListener("click", async () => {
+      if (!buyoutInputVisible) {
+        if (buyoutOfferInput) {
+          buyoutOfferInput.classList.remove("hidden");
+          buyoutOfferInput.min = String(Math.max(0, Number(currentBuyoutMin || 0)));
+          buyoutOfferInput.value = String(Math.max(0, Number(currentBuyoutMin || 0)));
+          buyoutOfferInput.focus();
+        }
+        buyoutInputVisible = true;
+        return;
+      }
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
-      const approved = await askOwnerBuyoutDecision(currentBuyoutMin);
+      const offer = Number((buyoutOfferInput && buyoutOfferInput.value) || currentBuyoutMin || 0);
+      if (offer < Number(currentBuyoutMin || 0)) {
+        showPopup(`Сумма выкупа не может быть меньше ${currentBuyoutMin}`);
+        return;
+      }
+      const approved = await askOwnerBuyoutDecision(offer);
       try {
         const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
           action: "buyout",
           as_player_id: actorPlayerId,
-          offer_amount: currentBuyoutMin > 0 ? currentBuyoutMin : (currentRentDue * 10),
+          offer_amount: offer,
           approved_by_owner: approved,
           client_msg_id: "buyout_" + Date.now(),
         });
         ingestServerEvent(ev);
         await reloadPropertyState();
+        if (buyoutOfferInput) buyoutOfferInput.classList.add("hidden");
+        buyoutInputVisible = false;
         if (approved) {
           if (rentAction) rentAction.classList.add("hidden");
           if (endAction) endAction.classList.remove("hidden");
@@ -931,19 +974,79 @@
   function renderTrade() {
     const box = document.querySelector("#trade-box");
     if (!box) return;
-    const trades = allEvents.filter((e) => e.event_type === "command_pay");
-    if (trades.length === 0) {
-      box.innerHTML = '<div class="timeline-row"><span class="timeline-row__actor">Система</span><span class="timeline-row__text">Сделок пока нет.</span><span class="timeline-row__time">—</span></div>';
-      return;
+    const activePlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+    const own = propertyState.filter((ps) => Number(ps.owner_player_id || 0) === Number(activePlayerId));
+    const others = players.filter((p) => Number(p.id || 0) !== Number(activePlayerId));
+    const options = others.map((p) => `<option value="${Number(p.id || 0)}">${escapeHtml(String(p.nickname_snapshot || "Игрок"))}</option>`).join("");
+    const ownCards = own.map((ps) => {
+      const pos = Number(ps.cell_position || -1);
+      const meta = boardMeta[pos] || { name: "#" + pos };
+      return `<label class="trade-card"><input type="checkbox" data-side="offer" value="${pos}"> ${escapeHtml(meta.name)}</label>`;
+    }).join("");
+    box.innerHTML = `
+      <div class="ledger-row">
+        <div class="ledger-row__title">Обмен карточками</div>
+        <div class="ledger-row__desc">
+          <div class="trade-grid">
+            <div><strong>Ваши карточки</strong><div class="trade-list">${ownCards || "Нет карточек"}</div></div>
+            <div>
+              <strong>Игрок для обмена</strong>
+              <select id="trade-target-player" class="password-inline" style="max-width:220px;min-width:180px;height:36px">${options}</select>
+              <div id="trade-target-cards" class="trade-list"></div>
+              <input id="trade-cash-offer" class="password-inline" type="number" min="0" step="1" value="0" placeholder="Деньги в обмен" style="max-width:220px;min-width:180px;height:36px;margin-top:8px">
+            </div>
+          </div>
+          <button id="trade-submit" class="btn btn-outline" style="margin-top:10px">Предложить обмен</button>
+        </div>
+      </div>
+    `;
+    const targetSelect = box.querySelector("#trade-target-player");
+    const targetCardsWrap = box.querySelector("#trade-target-cards");
+    const cashInput = box.querySelector("#trade-cash-offer");
+    const refreshTargetCards = () => {
+      if (!targetCardsWrap || !targetSelect) return;
+      const targetId = Number(targetSelect.value || 0);
+      const cards = propertyState.filter((ps) => Number(ps.owner_player_id || 0) === targetId).map((ps) => {
+        const pos = Number(ps.cell_position || -1);
+        const meta = boardMeta[pos] || { name: "#" + pos };
+        return `<label class="trade-card"><input type="checkbox" data-side="request" value="${pos}"> ${escapeHtml(meta.name)}</label>`;
+      }).join("");
+      targetCardsWrap.innerHTML = `<div style="margin-top:8px"><strong>Карточки выбранного игрока</strong><div class="trade-list">${cards || "Нет карточек"}</div></div>`;
+    };
+    if (targetSelect) {
+      targetSelect.addEventListener("change", refreshTargetCards);
+      refreshTargetCards();
     }
-    box.innerHTML = "";
-    trades.forEach((e) => {
-      const payload = parsePayload(e);
-      const row = document.createElement("div");
-      row.className = "ledger-row";
-      row.innerHTML = `<div class="ledger-row__title">${actorName(e)} → ${playerNameById.get(Number(payload.to_player_id || 0)) || "Игрок"}: ${Number(payload.amount || 0)}</div><div class="ledger-row__meta">${formatTimestampRu(e.created_at || "")}</div>`;
-      box.appendChild(row);
-    });
+    const submitBtn = box.querySelector("#trade-submit");
+    if (submitBtn) {
+      submitBtn.addEventListener("click", async () => {
+        const targetPlayerId = Number((targetSelect && targetSelect.value) || 0);
+        const offerPositions = Array.from(box.querySelectorAll('input[data-side="offer"]:checked')).map((el) => Number(el.value || -1)).filter((x) => x >= 0);
+        const requestPositions = Array.from(box.querySelectorAll('input[data-side="request"]:checked')).map((el) => Number(el.value || -1)).filter((x) => x >= 0);
+        const cashOffer = Math.max(0, Number((cashInput && cashInput.value) || 0));
+        if (!targetPlayerId || offerPositions.length === 0 || requestPositions.length === 0) {
+          showPopup("Выберите игрока и карточки для обмена");
+          return;
+        }
+        const approved = await askOwnerTradeDecision(targetPlayerId, offerPositions, requestPositions, cashOffer);
+        try {
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+            action: "trade",
+            as_player_id: activePlayerId,
+            target_player_id: targetPlayerId,
+            offer_positions: offerPositions,
+            request_positions: requestPositions,
+            cash_offer: cashOffer,
+            approved_by_target: approved,
+            client_msg_id: "trade_" + Date.now(),
+          });
+          ingestServerEvent(ev);
+          renderTrade();
+        } catch (err) {
+          showPopup(toRuError(err.message || "Не удалось выполнить обмен"));
+        }
+      });
+    }
   }
 
   function renderHistory() {
@@ -1070,7 +1173,7 @@
       const data = await res.json();
       const events = Array.isArray(data.events) ? data.events : [];
       for (const e of events) {
-        if (e.event_type !== "command_buy" && e.event_type !== "command_sell" && e.event_type !== "command_build" && e.event_type !== "command_sell_building") continue;
+        if (e.event_type !== "command_buy" && e.event_type !== "command_sell" && e.event_type !== "command_build" && e.event_type !== "command_sell_building" && e.event_type !== "command_mortgage" && e.event_type !== "command_redeem_mortgage" && e.event_type !== "command_trade") continue;
         const payload = parsePayload(e);
         const position = Number(payload.position || -1);
         if (position < 0) continue;
@@ -1095,7 +1198,25 @@
             ...current,
             houses: Number(payload.houses ?? current.houses ?? 0),
             has_hotel: Boolean(payload.has_hotel ?? current.has_hotel ?? false),
+            mortgaged: Boolean(payload.mortgaged ?? current.mortgaged ?? false),
           };
+        } else if (e.event_type === "command_mortgage" || e.event_type === "command_redeem_mortgage") {
+          const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === position);
+          if (idx < 0) continue;
+          propertyState[idx] = { ...propertyState[idx], mortgaged: Boolean(payload.mortgaged) };
+        } else if (e.event_type === "command_trade" && payload.trade_approved) {
+          const initiator = Number(payload.initiator_player_id || 0);
+          const target = Number(payload.target_player_id || 0);
+          const offers = Array.isArray(payload.offer_positions) ? payload.offer_positions.map(Number) : [];
+          const requests = Array.isArray(payload.request_positions) ? payload.request_positions.map(Number) : [];
+          offers.forEach((p) => {
+            const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === p);
+            if (idx >= 0) propertyState[idx] = { ...propertyState[idx], owner_player_id: target, mortgaged: false };
+          });
+          requests.forEach((p) => {
+            const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === p);
+            if (idx >= 0) propertyState[idx] = { ...propertyState[idx], owner_player_id: initiator, mortgaged: false };
+          });
         }
       }
       renderRightPanel();
@@ -1134,7 +1255,34 @@
         ...current,
         houses: Number(payload.houses ?? current.houses ?? 0),
         has_hotel: Boolean(payload.has_hotel ?? current.has_hotel ?? false),
+        mortgaged: Boolean(payload.mortgaged ?? current.mortgaged ?? false),
       };
+      renderRightPanel();
+      return;
+    }
+    if (type === "command_mortgage" || type === "command_redeem_mortgage") {
+      const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === position);
+      if (idx < 0) return;
+      propertyState[idx] = {
+        ...propertyState[idx],
+        mortgaged: Boolean(payload.mortgaged),
+      };
+      renderRightPanel();
+      return;
+    }
+    if (type === "command_trade" && payload.trade_approved) {
+      const initiator = Number(payload.initiator_player_id || 0);
+      const target = Number(payload.target_player_id || 0);
+      const offers = Array.isArray(payload.offer_positions) ? payload.offer_positions.map(Number) : [];
+      const requests = Array.isArray(payload.request_positions) ? payload.request_positions.map(Number) : [];
+      offers.forEach((pos) => {
+        const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === pos);
+        if (idx >= 0) propertyState[idx] = { ...propertyState[idx], owner_player_id: target, mortgaged: false };
+      });
+      requests.forEach((pos) => {
+        const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === pos);
+        if (idx >= 0) propertyState[idx] = { ...propertyState[idx], owner_player_id: initiator, mortgaged: false };
+      });
       renderRightPanel();
     }
   }
@@ -1204,12 +1352,17 @@
         icon.style.setProperty("--owner-color", ownerColor);
         box.appendChild(icon);
       } else {
-        for (let i = 0; i < houses; i += 1) {
-          const icon = document.createElement("span");
-          icon.className = "build-icon house";
-          icon.style.setProperty("--owner-color", ownerColor);
-          box.appendChild(icon);
-        }
+        const stack = document.createElement("span");
+        stack.className = "build-icon-stack";
+        const icon = document.createElement("span");
+        icon.className = "build-icon house";
+        icon.style.setProperty("--owner-color", ownerColor);
+        const count = document.createElement("span");
+        count.className = "build-icon-count";
+        count.textContent = String(houses);
+        stack.appendChild(icon);
+        stack.appendChild(count);
+        box.appendChild(stack);
       }
       const row = space.closest(".row");
       let edge = "south";
@@ -1264,7 +1417,60 @@
         });
         box.appendChild(plus);
       }
+      const canQuickBuildHotel = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
+        && !hasHotel
+        && Number(houses) >= 4
+        && canAffordAnyBuild(ownerId, "hotel")
+        && getBuildablePositions(ownerId, "hotel").has(pos);
+      if (canQuickBuildHotel) {
+        const plusHotel = document.createElement("button");
+        plusHotel.type = "button";
+        plusHotel.className = "build-plus";
+        plusHotel.textContent = "+";
+        plusHotel.title = "Построить отель";
+        plusHotel.addEventListener("click", async (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          try {
+            const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+              action: "build",
+              build_type: "hotel",
+              position: pos,
+              as_player_id: ownerId,
+              client_msg_id: "quick_build_hotel_" + pos + "_" + Date.now(),
+            });
+            ingestServerEvent(ev);
+            setBoardStatus(`${playerNameById.get(ownerId) || "Игрок"} построил отель на позиции ${pos}`, 1400);
+          } catch (err) {
+            showPopup(toRuError(err.message || "Не удалось построить отель"));
+          }
+        });
+        box.appendChild(plusHotel);
+      }
       space.appendChild(box);
+    });
+    updateBoardOwnershipStatuses();
+  }
+
+  function updateBoardOwnershipStatuses() {
+    document.querySelectorAll("#board .space-owner-status").forEach((el) => el.remove());
+    document.querySelectorAll('#board .space[data-pos]').forEach((space) => {
+      const pos = Number(space.getAttribute("data-pos") || -1);
+      if (pos < 0) return;
+      const meta = boardMeta[pos] || {};
+      const ownable = Number(meta.price || 0) > 0 || ["property", "railroad", "utility"].includes(String(meta.type || ""));
+      if (!ownable) return;
+      const state = propertyState.find((ps) => Number(ps.cell_position || -1) === pos);
+      const status = document.createElement("div");
+      status.className = "space-owner-status";
+      if (!state || Number(state.owner_player_id || 0) <= 0) {
+        status.textContent = "Свободно";
+      } else if (Boolean(state.mortgaged)) {
+        status.textContent = "Заложено";
+      } else {
+        status.textContent = playerNameById.get(Number(state.owner_player_id || 0)) || "Куплено";
+      }
+      space.appendChild(status);
     });
   }
 
@@ -1351,6 +1557,30 @@
     return false;
   }
 
+  function canSellCard(position) {
+    const state = propertyState.find((x) => Number(x.cell_position || -1) === Number(position));
+    if (!state) return false;
+    const ownerId = Number(state.owner_player_id || 0);
+    const activePlayerId = Number(playerIdsInOrder[controlIndex] || selfPlayerId);
+    return ownerId > 0 && ownerId === activePlayerId;
+  }
+
+  function canMortgageCard(position) {
+    const state = propertyState.find((x) => Number(x.cell_position || -1) === Number(position));
+    if (!state) return false;
+    const ownerId = Number(state.owner_player_id || 0);
+    const activePlayerId = Number(playerIdsInOrder[controlIndex] || selfPlayerId);
+    return ownerId > 0 && ownerId === activePlayerId && !Boolean(state.mortgaged);
+  }
+
+  function canRedeemCard(position) {
+    const state = propertyState.find((x) => Number(x.cell_position || -1) === Number(position));
+    if (!state) return false;
+    const ownerId = Number(state.owner_player_id || 0);
+    const activePlayerId = Number(playerIdsInOrder[controlIndex] || selfPlayerId);
+    return ownerId > 0 && ownerId === activePlayerId && Boolean(state.mortgaged);
+  }
+
   async function triggerAutoEndTurn(actorPlayerId) {
     if (autoEndTurnInFlight) return;
     autoEndTurnInFlight = true;
@@ -1416,8 +1646,14 @@
           ${hotelRentRow(rH)}
         </div>
         <div class="deed-build-costs">
-          <div>Дома: <span class="deed-underline">${deedMoney(buildCost)}</span> каждый</div>
-          <div>Отели: <span class="deed-underline">${deedMoney(buildCost)}</span><span class="deed-foot"> (плюс 4 дома)</span></div>
+          <div class="deed-build-row">
+            <span class="deed-build-label">Дома:</span>
+            <span class="deed-build-right"><span class="deed-underline">${deedMoney(buildCost)}</span><span class="deed-build-sub">Каждый</span></span>
+          </div>
+          <div class="deed-build-row">
+            <span class="deed-build-label">Отели:</span>
+            <span class="deed-build-right"><span class="deed-underline">${deedMoney(buildCost)}</span><span class="deed-build-sub">(плюс 4 дома)</span></span>
+          </div>
         </div>
         <div class="deed-price-line">Цена собственности: ${deedMoney(Number(meta.price || 0))}</div>
       </div>
@@ -1444,15 +1680,24 @@
     </div>`;
   }
 
-  function renderDeedCardHtml(meta, withCloseButton) {
+  function renderDeedCardHtml(meta, withCloseButton, position) {
     const isStreet = meta.group !== null && meta.group !== undefined;
-    return isStreet ? buildStreetDeedHtml(meta, withCloseButton) : buildGenericDeedHtml(meta, withCloseButton);
+    let html = isStreet ? buildStreetDeedHtml(meta, withCloseButton) : buildGenericDeedHtml(meta, withCloseButton);
+    if (position !== undefined && canSellCard(position)) {
+      if (canRedeemCard(position)) {
+        html += `<button type="button" class="deed-redeem-btn" data-redeem-position="${Number(position)}">Выкупить</button>`;
+      } else if (canMortgageCard(position)) {
+        html += `<button type="button" class="deed-mortgage-btn" data-mortgage-position="${Number(position)}">Заложить</button>`;
+      }
+      html += `<button type="button" class="deed-sell-btn" data-sell-position="${Number(position)}">Продать</button>`;
+    }
+    return html;
   }
 
-  function showDeedPopup(meta) {
+  function showDeedPopup(meta, position) {
     const wrap = document.querySelector("#space-overlay");
     if (!wrap) return;
-    wrap.innerHTML = `<div class="modal-body type-ok modal-body--deed">${renderDeedCardHtml(meta, true)}</div>`;
+    wrap.innerHTML = `<div class="modal-body type-ok modal-body--deed">${renderDeedCardHtml(meta, true, position)}</div>`;
     wrap.classList.remove("hidden", "hide");
     wrap.classList.add("show");
     const close = () => {
@@ -1460,8 +1705,69 @@
       wrap.classList.add("hide");
       window.setTimeout(() => wrap.classList.add("hidden"), 180);
     };
-    wrap.onclick = (evt) => {
-      if (evt.target === wrap || evt.target.closest(".deed-inline-close")) close();
+    wrap.onclick = async (evt) => {
+      if (evt.target === wrap || evt.target.closest(".deed-inline-close")) {
+        close();
+        return;
+      }
+      const sellBtn = evt.target.closest(".deed-sell-btn");
+      const mortgageBtn = evt.target.closest(".deed-mortgage-btn");
+      const redeemBtn = evt.target.closest(".deed-redeem-btn");
+      if (mortgageBtn) {
+        const mortgagePosition = Number(mortgageBtn.getAttribute("data-mortgage-position") || -1);
+        if (mortgagePosition < 0) return;
+        try {
+          const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+            action: "mortgage",
+            position: mortgagePosition,
+            as_player_id: actorPlayerId,
+            client_msg_id: "mortgage_" + mortgagePosition + "_" + Date.now(),
+          });
+          ingestServerEvent(ev);
+          close();
+        } catch (err) {
+          showPopup(toRuError(err.message || "Не удалось заложить карточку"));
+        }
+        return;
+      }
+      if (redeemBtn) {
+        const redeemPosition = Number(redeemBtn.getAttribute("data-redeem-position") || -1);
+        if (redeemPosition < 0) return;
+        try {
+          const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+            action: "redeem_mortgage",
+            position: redeemPosition,
+            as_player_id: actorPlayerId,
+            client_msg_id: "redeem_" + redeemPosition + "_" + Date.now(),
+          });
+          ingestServerEvent(ev);
+          close();
+        } catch (err) {
+          showPopup(toRuError(err.message || "Не удалось выкупить карточку из залога"));
+        }
+        return;
+      }
+      if (sellBtn) {
+        const sellPosition = Number(sellBtn.getAttribute("data-sell-position") || -1);
+        if (sellPosition < 0) return;
+        const confirmed = window.confirm("Продать карточку со всеми строениями?");
+        if (!confirmed) return;
+        const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+        try {
+          const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
+            action: "sell",
+            position: sellPosition,
+            as_player_id: actorPlayerId,
+            client_msg_id: "sell_card_" + sellPosition + "_" + Date.now(),
+          });
+          ingestServerEvent(ev);
+          close();
+        } catch (err) {
+          showPopup(toRuError(err.message || "Не удалось продать карточку"));
+        }
+      }
     };
   }
 
@@ -1473,7 +1779,7 @@
       panel.className = "player-deed-view";
       chip.appendChild(panel);
     }
-    panel.innerHTML = renderDeedCardHtml(meta, true);
+    panel.innerHTML = renderDeedCardHtml(meta, true, Number(meta.position ?? -1));
     panel.classList.remove("hidden");
     const closeBtn = panel.querySelector(".deed-inline-close");
     if (closeBtn) {
@@ -1522,7 +1828,7 @@
       }
       const meta = boardMeta[pos];
       if (!meta) return;
-      showDeedPopup(meta);
+      showDeedPopup({ ...meta, position: pos }, pos);
     });
   });
 
@@ -1616,6 +1922,44 @@
       window.setTimeout(() => root.classList.add("hidden"), 240);
     };
     root.onclick = closeIt;
+  }
+
+  async function askOwnerTradeDecision(targetPlayerId, offerPositions, requestPositions, cashOffer) {
+    const offerNames = offerPositions.map((pos) => (boardMeta[pos] && boardMeta[pos].name) || ("#" + pos));
+    const requestNames = requestPositions.map((pos) => (boardMeta[pos] && boardMeta[pos].name) || ("#" + pos));
+    const root = document.querySelector("#modal-overlay");
+    if (!root) return false;
+    const titleEl = root.querySelector(".modal-title");
+    const contentEl = root.querySelector(".modal-content");
+    const footerEl = root.querySelector(".modal-footer");
+    if (!titleEl || !contentEl || !footerEl) return false;
+    return new Promise((resolve) => {
+      titleEl.textContent = "Предложение обмена";
+      contentEl.textContent = `${playerNameById.get(playerIdsInOrder[controlIndex] || selfPlayerId) || "Игрок"} предлагает игроку ${playerNameById.get(targetPlayerId) || targetPlayerId}: [${offerNames.join(", ")}] + ${cashOffer} за [${requestNames.join(", ")}].`;
+      footerEl.innerHTML = "";
+      const agree = document.createElement("button");
+      agree.type = "button";
+      agree.className = "modal-action";
+      agree.textContent = "Согласиться";
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "modal-action";
+      reject.textContent = "Отказать";
+      const closeModal = (result) => {
+        root.classList.remove("show");
+        root.classList.add("hide");
+        window.setTimeout(() => root.classList.add("hidden"), 180);
+        resolve(result);
+      };
+      agree.onclick = () => closeModal(true);
+      reject.onclick = () => closeModal(false);
+      const close = root.querySelector(".close");
+      if (close) close.onclick = () => closeModal(false);
+      footerEl.appendChild(reject);
+      footerEl.appendChild(agree);
+      root.classList.remove("hidden", "hide");
+      root.classList.add("show");
+    });
   }
 
   const initialEvents = (() => {

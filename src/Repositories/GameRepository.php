@@ -314,6 +314,33 @@ final class GameRepository
         $stmt->execute();
     }
 
+    public function updatePropertyMortgage(string $gameId, int $position, bool $mortgaged): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO game_property_state (game_id, cell_position, owner_player_id, houses, has_hotel, mortgaged)
+             VALUES (:game_id, :pos, NULL, 0, FALSE, :mortgaged)
+             ON CONFLICT (game_id, cell_position)
+             DO UPDATE SET mortgaged = EXCLUDED.mortgaged, updated_at = NOW()'
+        );
+        $stmt->bindValue(':game_id', $gameId);
+        $stmt->bindValue(':pos', $position, PDO::PARAM_INT);
+        $stmt->bindValue(':mortgaged', $mortgaged, PDO::PARAM_BOOL);
+        $stmt->execute();
+    }
+
+    public function transferProperty(string $gameId, int $position, int $newOwnerPlayerId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE game_property_state
+             SET owner_player_id = :owner_player_id, mortgaged = FALSE, updated_at = NOW()
+             WHERE game_id = :game_id AND cell_position = :pos'
+        );
+        $stmt->bindValue(':owner_player_id', $newOwnerPlayerId, PDO::PARAM_INT);
+        $stmt->bindValue(':game_id', $gameId);
+        $stmt->bindValue(':pos', $position, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
     public function listPropertyStates(string $gameId): array
     {
         $stmt = $this->pdo->prepare(

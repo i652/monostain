@@ -20,15 +20,47 @@ ob_start();
     </div>
   </header>
 
-  <nav class="game-tabs" role="tablist" aria-label="Вкладки игры">
-    <button class="btn btn-outline game-tab is-active" data-tab="board">Поле</button>
-    <button class="btn btn-outline game-tab" data-tab="ledger">Бухгалтерия</button>
-    <button class="btn btn-outline game-tab" data-tab="timeline">Хронология</button>
-    <button class="btn btn-outline game-tab" data-tab="stats">Статистика</button>
-    <button class="btn btn-outline game-tab" data-tab="trade">Сделки</button>
-    <button class="btn btn-outline game-tab" data-tab="rules">Правила</button>
-    <button class="btn btn-outline game-tab" data-tab="history">История</button>
-  </nav>
+  <div class="game-toolbar-row">
+    <div class="main-action main-action--top">
+      <div class="action roll"><button class="roll-dice js-game-command" data-action="roll">Бросить кубики</button></div>
+      <div class="action end hidden"><button class="end-turn js-game-command" data-action="end_turn">Завершить ход</button></div>
+      <div class="action purchase hidden">
+        <div class="full-width">Стоимость: <strong><span class="money cost-amount">0</span></strong></div>
+        <button class="purchase-property">Купить <span class="name"></span></button>
+        <div class="or">или</div>
+        <button class="skip-property">Пропустить</button>
+      </div>
+      <div class="action rent hidden">
+        <div class="full-width">Рента: <strong><span class="money rent-amount">0</span></strong></div>
+        <button class="pay-rent">Оплатить ренту</button>
+        <div class="or">или</div>
+        <button class="buyout-property">Выкупить клетку</button>
+        <input type="number" class="buyout-offer-input hidden" min="0" step="1" aria-label="Сумма выкупа">
+      </div>
+      <div class="action build hidden">
+        <button class="build-house">Построить дом</button>
+        <button class="build-hotel">Построить отель</button>
+      </div>
+      <div class="action roll-pay hidden">
+        <button class="roll-dice try-doubles js-game-command" data-action="roll">Бросить кубики</button>
+        <span class="or">или</span>
+        <button class="pay-bail">Оплатить залог</button>
+      </div>
+      <div class="action pay-bail hidden">
+        <button class="pay-bail">Оплатить залог</button>
+      </div>
+      <div class="action moving hidden">Движение...</div>
+    </div>
+    <nav class="game-tabs" role="tablist" aria-label="Вкладки игры">
+      <button class="btn btn-outline game-tab is-active" data-tab="board">Поле</button>
+      <button class="btn btn-outline game-tab" data-tab="ledger">Бухгалтерия</button>
+      <button class="btn btn-outline game-tab" data-tab="timeline">Хронология</button>
+      <button class="btn btn-outline game-tab" data-tab="stats">Статистика</button>
+      <button class="btn btn-outline game-tab" data-tab="trade">Сделки</button>
+      <button class="btn btn-outline game-tab" data-tab="rules">Правила</button>
+      <button class="btn btn-outline game-tab" data-tab="history">История</button>
+    </nav>
+  </div>
 
   <div class="game-panels">
     <section class="game-panel is-active" data-panel="board">
@@ -73,35 +105,6 @@ ob_start();
                 </div>
                 <div class="dice-status hidden">Выпало:</div>
                 <div class="dice-value hidden">0</div>
-              </div>
-              <div class="main-action">
-                <div class="action roll"><button class="roll-dice js-game-command" data-action="roll">Бросить кубики</button></div>
-                <div class="action end hidden"><button class="end-turn js-game-command" data-action="end_turn">Завершить ход</button></div>
-                <div class="action purchase hidden">
-                  <div class="full-width">Стоимость: <strong><span class="money cost-amount">0</span></strong></div>
-                  <button class="purchase-property">Купить <span class="name"></span></button>
-                  <div class="or">или</div>
-                  <button class="skip-property">Пропустить</button>
-                </div>
-                <div class="action rent hidden">
-                  <div class="full-width">Рента: <strong><span class="money rent-amount">0</span></strong></div>
-                  <button class="pay-rent">Оплатить ренту</button>
-                  <div class="or">или</div>
-                  <button class="buyout-property">Выкупить клетку</button>
-                </div>
-                <div class="action build hidden">
-                  <button class="build-house">Построить дом</button>
-                  <button class="build-hotel">Построить отель</button>
-                </div>
-                <div class="action roll-pay hidden">
-                  <button class="roll-dice try-doubles js-game-command" data-action="roll">Бросить кубики</button>
-                  <span class="or">или</span>
-                  <button class="pay-bail">Оплатить залог</button>
-                </div>
-                <div class="action pay-bail hidden">
-                  <button class="pay-bail">Оплатить залог</button>
-                </div>
-                <div class="action moving hidden">Движение...</div>
               </div>
             </div>
             <div class="row vertical east">
