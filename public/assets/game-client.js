@@ -184,8 +184,6 @@
   const buildHouseBtn = document.querySelector(".build-house");
   const buildHotelBtn = document.querySelector(".build-hotel");
   const purchaseName = document.querySelector(".main-action .action.purchase .name");
-  const purchaseCost = document.querySelector(".main-action .action.purchase .cost-amount");
-  const rentAmount = document.querySelector(".main-action .action.rent .rent-amount");
   const buyoutOfferInput = document.querySelector(".main-action .action.rent .buyout-offer-input");
   let currentRentDue = 0;
   let currentBuyoutMin = 0;
@@ -193,8 +191,30 @@
   let buildablePositions = new Set();
   let autoEndTurnInFlight = false;
   let suppressTransientModals = true;
+  let boardRotationDeg = 0;
   let buyoutInputVisible = false;
   renderTokens();
+  const rotateLeftBtn = document.querySelector(".board-rotate-left");
+  const rotateRightBtn = document.querySelector(".board-rotate-right");
+  const boardEl = document.querySelector("#board");
+  const applyBoardRotation = () => {
+    if (!boardEl) return;
+    boardEl.style.transform = `rotate(${boardRotationDeg}deg)`;
+    boardEl.style.transformOrigin = "50% 50%";
+  };
+  if (rotateLeftBtn) {
+    rotateLeftBtn.addEventListener("click", () => {
+      boardRotationDeg -= 90;
+      applyBoardRotation();
+    });
+  }
+  if (rotateRightBtn) {
+    rotateRightBtn.addEventListener("click", () => {
+      boardRotationDeg += 90;
+      applyBoardRotation();
+    });
+  }
+
   renderRightPanel();
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -520,17 +540,7 @@
       if (Number.isFinite(Number(payload.cash))) setPlayerCash(actorId, payload.cash);
       if (Number.isFinite(Number(payload.position))) setPlayerPosition(actorId, payload.position);
       const dice = Array.isArray(payload.dice) ? payload.dice : [0, 0];
-      const die1 = document.querySelector("#die-1");
-      const die2 = document.querySelector("#die-2");
-      const diceValue = document.querySelector(".dice-value");
-      const diceStatus = document.querySelector(".dice-status");
-      if (die1) die1.setAttribute("data-value", String(Number(dice[0] || 0)));
-      if (die2) die2.setAttribute("data-value", String(Number(dice[1] || 0)));
-      if (diceValue) {
-        diceValue.textContent = String(Number(dice[0] || 0) + Number(dice[1] || 0));
-        diceValue.classList.remove("hidden");
-      }
-      if (diceStatus) diceStatus.classList.remove("hidden");
+      rollDiceVisual(Number(dice[0] || 1), Number(dice[1] || 1), actorId);
       if (payload.offer_purchase) {
         currentRentDue = 0;
         currentBuyoutMin = 0;
@@ -541,14 +551,20 @@
         if (rollAction) rollAction.classList.add("hidden");
         if (endAction) endAction.classList.add("hidden");
         if (purchaseAction) purchaseAction.classList.remove("hidden");
-        if (purchaseName) purchaseName.textContent = String(payload.space_name || "");
-        if (purchaseCost) purchaseCost.textContent = String(Number(payload.price || 0));
+        const purchaseBtn = document.querySelector(".purchase-property");
+        const posFromPayload = Number(payload.position || -1);
+        const metaFromPos = posFromPayload >= 0 ? boardMeta[posFromPayload] : null;
+        const shownName = String((metaFromPos && metaFromPos.name) || payload.space_name || "");
+        const shownPrice = Number((metaFromPos && metaFromPos.price) || payload.price || 0);
+        if (purchaseName) purchaseName.textContent = shownName;
+        if (purchaseBtn) purchaseBtn.textContent = `Купить ${shownName} за ${shownPrice}`;
       } else {
         if (purchaseAction) purchaseAction.classList.add("hidden");
         if (payload.rent_due) {
           currentRentDue = Number(payload.rent_due || 0);
           currentBuyoutMin = Number(payload.buyout_min || 0);
-          if (rentAmount) rentAmount.textContent = String(currentRentDue);
+          const payRentBtn = document.querySelector(".pay-rent");
+          if (payRentBtn) payRentBtn.textContent = `Оплатить ренту: M ${currentRentDue}`;
           if (rentAction) rentAction.classList.remove("hidden");
           if (buildAction) buildAction.classList.add("hidden");
           if (rollAction) rollAction.classList.add("hidden");
@@ -746,8 +762,12 @@
     buyoutBtn.addEventListener("click", async () => {
       if (!buyoutInputVisible) {
         if (buyoutOfferInput) {
+          const actorPlayerId = Number(playerIdsInOrder[controlIndex] || selfPlayerId || 0);
+          const actorPlayer = players.find((p) => Number(p.id || 0) === actorPlayerId);
+          const cash = Number((actorPlayer && actorPlayer.cash) || 0);
           buyoutOfferInput.classList.remove("hidden");
           buyoutOfferInput.min = String(Math.max(0, Number(currentBuyoutMin || 0)));
+          buyoutOfferInput.max = String(Math.max(0, cash));
           buyoutOfferInput.value = String(Math.max(0, Number(currentBuyoutMin || 0)));
           buyoutOfferInput.focus();
         }
@@ -756,8 +776,14 @@
       }
       const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
       const offer = Number((buyoutOfferInput && buyoutOfferInput.value) || currentBuyoutMin || 0);
+      const actorPlayer = players.find((p) => Number(p.id || 0) === Number(actorPlayerId || 0));
+      const actorCash = Number((actorPlayer && actorPlayer.cash) || 0);
       if (offer < Number(currentBuyoutMin || 0)) {
         showPopup(`Сумма выкупа не может быть меньше ${currentBuyoutMin}`);
+        return;
+      }
+      if (offer > actorCash) {
+        showPopup(`Сумма выкупа не может превышать ваш баланс (${actorCash})`);
         return;
       }
       const approved = await askOwnerBuyoutDecision(offer);
@@ -981,19 +1007,24 @@
     const ownCards = own.map((ps) => {
       const pos = Number(ps.cell_position || -1);
       const meta = boardMeta[pos] || { name: "#" + pos };
-      return `<label class="trade-card"><input type="checkbox" data-side="offer" value="${pos}"> ${escapeHtml(meta.name)}</label>`;
+      const hasGroup = meta.group !== null && meta.group !== undefined;
+      const colorClass = hasGroup ? groupColorClass[Number(meta.group)] || "" : "asset-card__bar--neutral";
+      return `<button type="button" class="asset-card trade-asset-card" data-trade-pos="${pos}" data-trade-side="offer"><span class="asset-card__bar ${colorClass}"></span><span class="asset-card__name">${escapeHtml(meta.name)}</span><span class="trade-check"><input type="checkbox" data-side="offer" value="${pos}"></span></button>`;
     }).join("");
     box.innerHTML = `
       <div class="ledger-row">
-        <div class="ledger-row__title">Обмен карточками</div>
         <div class="ledger-row__desc">
           <div class="trade-grid">
-            <div><strong>Ваши карточки</strong><div class="trade-list">${ownCards || "Нет карточек"}</div></div>
             <div>
-              <strong>Игрок для обмена</strong>
-              <select id="trade-target-player" class="password-inline" style="max-width:220px;min-width:180px;height:36px">${options}</select>
+              <div class="trade-list">${ownCards || "Нет карточек"}</div>
+              <input id="trade-cash-offer" class="password-inline" type="number" min="0" step="1" value="" placeholder="Доплата (необязательно)" style="max-width:240px;min-width:200px;height:36px;margin-top:8px">
+            </div>
+            <div>
+              <div class="trade-target-head">
+                <strong>Игрок для обмена</strong>
+                <select id="trade-target-player" class="password-inline" style="max-width:220px;min-width:180px;height:36px">${options}</select>
+              </div>
               <div id="trade-target-cards" class="trade-list"></div>
-              <input id="trade-cash-offer" class="password-inline" type="number" min="0" step="1" value="0" placeholder="Деньги в обмен" style="max-width:220px;min-width:180px;height:36px;margin-top:8px">
             </div>
           </div>
           <button id="trade-submit" class="btn btn-outline" style="margin-top:10px">Предложить обмен</button>
@@ -1003,20 +1034,37 @@
     const targetSelect = box.querySelector("#trade-target-player");
     const targetCardsWrap = box.querySelector("#trade-target-cards");
     const cashInput = box.querySelector("#trade-cash-offer");
+    const bindTradeCardClicks = (root) => {
+      root.querySelectorAll(".trade-asset-card").forEach((btn) => {
+        if (btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", (evt) => {
+          const cb = btn.querySelector('input[type="checkbox"]');
+          if (evt.target.closest("input")) return;
+          if (cb) cb.checked = !cb.checked;
+          const pos = Number(btn.getAttribute("data-trade-pos") || -1);
+          if (pos >= 0) showDeedPopup({ ...(boardMeta[pos] || {}), position: pos }, pos);
+        });
+      });
+    };
     const refreshTargetCards = () => {
       if (!targetCardsWrap || !targetSelect) return;
       const targetId = Number(targetSelect.value || 0);
       const cards = propertyState.filter((ps) => Number(ps.owner_player_id || 0) === targetId).map((ps) => {
         const pos = Number(ps.cell_position || -1);
         const meta = boardMeta[pos] || { name: "#" + pos };
-        return `<label class="trade-card"><input type="checkbox" data-side="request" value="${pos}"> ${escapeHtml(meta.name)}</label>`;
+        const hasGroup = meta.group !== null && meta.group !== undefined;
+        const colorClass = hasGroup ? groupColorClass[Number(meta.group)] || "" : "asset-card__bar--neutral";
+        return `<button type="button" class="asset-card trade-asset-card" data-trade-pos="${pos}" data-trade-side="request"><span class="asset-card__bar ${colorClass}"></span><span class="asset-card__name">${escapeHtml(meta.name)}</span><span class="trade-check"><input type="checkbox" data-side="request" value="${pos}"></span></button>`;
       }).join("");
-      targetCardsWrap.innerHTML = `<div style="margin-top:8px"><strong>Карточки выбранного игрока</strong><div class="trade-list">${cards || "Нет карточек"}</div></div>`;
+      targetCardsWrap.innerHTML = cards || "Нет карточек";
+      bindTradeCardClicks(targetCardsWrap);
     };
     if (targetSelect) {
       targetSelect.addEventListener("change", refreshTargetCards);
       refreshTargetCards();
     }
+    bindTradeCardClicks(box);
     const submitBtn = box.querySelector("#trade-submit");
     if (submitBtn) {
       submitBtn.addEventListener("click", async () => {
@@ -1194,9 +1242,13 @@
           const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === position);
           if (idx < 0) continue;
           const current = propertyState[idx];
+          let nextHouses = Number(payload.houses ?? current.houses ?? 0);
+          if (e.event_type === "command_sell_building" && payload.sell_type === "hotel" && !Boolean(payload.has_hotel)) {
+            nextHouses = Math.max(4, nextHouses);
+          }
           propertyState[idx] = {
             ...current,
-            houses: Number(payload.houses ?? current.houses ?? 0),
+            houses: nextHouses,
             has_hotel: Boolean(payload.has_hotel ?? current.has_hotel ?? false),
             mortgaged: Boolean(payload.mortgaged ?? current.mortgaged ?? false),
           };
@@ -1251,9 +1303,13 @@
       const idx = propertyState.findIndex((x) => Number(x.cell_position || -1) === position);
       if (idx < 0) return;
       const current = propertyState[idx];
+      let nextHouses = Number(payload.houses ?? current.houses ?? 0);
+      if (type === "command_sell_building" && payload.sell_type === "hotel" && !Boolean(payload.has_hotel)) {
+        nextHouses = Math.max(4, nextHouses);
+      }
       propertyState[idx] = {
         ...current,
-        houses: Number(payload.houses ?? current.houses ?? 0),
+        houses: nextHouses,
         has_hotel: Boolean(payload.has_hotel ?? current.has_hotel ?? false),
         mortgaged: Boolean(payload.mortgaged ?? current.mortgaged ?? false),
       };
@@ -1463,6 +1519,18 @@
       const state = propertyState.find((ps) => Number(ps.cell_position || -1) === pos);
       const status = document.createElement("div");
       status.className = "space-owner-status";
+      const row = space.closest(".row");
+      if (row && row.classList.contains("north")) status.classList.add("space-owner-status--north");
+      else if (row && row.classList.contains("south")) status.classList.add("space-owner-status--south");
+      else if (row && row.classList.contains("west")) status.classList.add("space-owner-status--west");
+      else if (row && row.classList.contains("east")) status.classList.add("space-owner-status--east");
+      else {
+        const cls = space.className || "";
+        if (cls.includes(" nw")) status.classList.add("space-owner-status--north");
+        else if (cls.includes(" ne")) status.classList.add("space-owner-status--east");
+        else if (cls.includes(" sw")) status.classList.add("space-owner-status--west");
+        else status.classList.add("space-owner-status--south");
+      }
       if (!state || Number(state.owner_player_id || 0) <= 0) {
         status.textContent = "Свободно";
       } else if (Boolean(state.mortgaged)) {
@@ -1935,7 +2003,8 @@
     if (!titleEl || !contentEl || !footerEl) return false;
     return new Promise((resolve) => {
       titleEl.textContent = "Предложение обмена";
-      contentEl.textContent = `${playerNameById.get(playerIdsInOrder[controlIndex] || selfPlayerId) || "Игрок"} предлагает игроку ${playerNameById.get(targetPlayerId) || targetPlayerId}: [${offerNames.join(", ")}] + ${cashOffer} за [${requestNames.join(", ")}].`;
+      const cashPart = Number(cashOffer || 0) > 0 ? ` + ${cashOffer}` : "";
+      contentEl.textContent = `${playerNameById.get(playerIdsInOrder[controlIndex] || selfPlayerId) || "Игрок"} предлагает: ${offerNames.join(", ")}${cashPart} за ${requestNames.join(", ")}.`;
       footerEl.innerHTML = "";
       const agree = document.createElement("button");
       agree.type = "button";
@@ -2008,3 +2077,73 @@
   }, 600);
   pollLoop();
 })();
+
+function rollDiceVisual(d1, d2, actorId) {
+  const dieOne = document.querySelector("#dice1");
+  const dieTwo = document.querySelector("#dice2");
+  if (dieOne) {
+    setDiceFace(dieOne, Math.max(1, Math.min(6, d1)));
+  }
+  if (dieTwo) {
+    setDiceFace(dieTwo, Math.max(1, Math.min(6, d2)));
+  }
+  if (Number(actorId || 0) === Number(document.querySelector(".game-room")?.getAttribute("data-player-id") || 0)) {
+    const total = Number(d1 || 0) + Number(d2 || 0);
+    const notify = document.querySelector("#game-notify");
+    if (notify) {
+      notify.hidden = false;
+      notify.textContent = `Выпало: ${total}`;
+      window.setTimeout(() => { notify.hidden = true; }, 2000);
+    }
+  }
+  animateDiceChaos(d1, d2);
+}
+
+function setDiceFace(dieEl, value) {
+  const spinsX = 360 * (2 + Math.floor(Math.random() * 3));
+  const spinsY = 360 * (2 + Math.floor(Math.random() * 3));
+  const base = {
+    1: "rotateX(0deg) rotateY(0deg)",
+    2: "rotateY(180deg)",
+    3: "rotateY(90deg)",
+    4: "rotateX(-90deg)",
+    5: "rotateX(90deg)",
+    6: "rotateY(-90deg)",
+  };
+  dieEl.style.transform = `rotateX(${spinsX}deg) rotateY(${spinsY}deg) ${base[value] || base[1]}`;
+}
+
+function animateDiceChaos(d1, d2) {
+  const arena = document.querySelector("#dice-arena");
+  const dice = [document.querySelector("#dice1"), document.querySelector("#dice2")].filter(Boolean);
+  if (!arena || dice.length === 0) return;
+  const b = arena.getBoundingClientRect();
+  const size = 100;
+  const minX = 0;
+  const minY = 0;
+  const maxX = Math.max(minX, b.width - size);
+  const maxY = Math.max(minY, b.height - size);
+  dice.forEach((die, idx) => {
+    setDiceFace(die, idx === 0 ? d1 : d2);
+    let vx = (Math.random() * 14) - 7;
+    let vy = (Math.random() * 14) - 7;
+    let x = Math.random() * Math.max(1, (maxX - minX)) + minX;
+    let y = Math.random() * Math.max(1, (maxY - minY)) + minY;
+    die.style.left = x + "px";
+    die.style.top = y + "px";
+    let steps = 0;
+    const tick = () => {
+      x += vx;
+      y += vy;
+      if (x <= minX || x >= maxX) vx = -vx * 0.88;
+      if (y <= minY || y >= maxY) vy = -vy * 0.88;
+      x = Math.max(minX, Math.min(maxX, x));
+      y = Math.max(minY, Math.min(maxY, y));
+      die.style.left = x + "px";
+      die.style.top = y + "px";
+      steps += 1;
+      if (steps < 16) window.setTimeout(tick, 70);
+    };
+    tick();
+  });
+}

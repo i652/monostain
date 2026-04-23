@@ -23,15 +23,17 @@ ob_start();
   <div class="game-toolbar-row">
     <div class="main-action main-action--top">
       <div class="action roll"><button class="roll-dice js-game-command" data-action="roll">Бросить кубики</button></div>
+      <div class="action rotate">
+        <button type="button" class="board-rotate-btn board-rotate-left" aria-label="Повернуть карту влево">⟲</button>
+        <button type="button" class="board-rotate-btn board-rotate-right" aria-label="Повернуть карту вправо">⟳</button>
+      </div>
       <div class="action end hidden"><button class="end-turn js-game-command" data-action="end_turn">Завершить ход</button></div>
       <div class="action purchase hidden">
-        <div class="full-width">Стоимость: <strong><span class="money cost-amount">0</span></strong></div>
         <button class="purchase-property">Купить <span class="name"></span></button>
         <div class="or">или</div>
         <button class="skip-property">Пропустить</button>
       </div>
       <div class="action rent hidden">
-        <div class="full-width">Рента: <strong><span class="money rent-amount">0</span></strong></div>
         <button class="pay-rent">Оплатить ренту</button>
         <div class="or">или</div>
         <button class="buyout-property">Выкупить клетку</button>
@@ -54,7 +56,6 @@ ob_start();
     <nav class="game-tabs" role="tablist" aria-label="Вкладки игры">
       <button class="btn btn-outline game-tab is-active" data-tab="board">Поле</button>
       <button class="btn btn-outline game-tab" data-tab="ledger">Бухгалтерия</button>
-      <button class="btn btn-outline game-tab" data-tab="timeline">Хронология</button>
       <button class="btn btn-outline game-tab" data-tab="stats">Статистика</button>
       <button class="btn btn-outline game-tab" data-tab="trade">Сделки</button>
       <button class="btn btn-outline game-tab" data-tab="rules">Правила</button>
@@ -65,6 +66,7 @@ ob_start();
   <div class="game-panels">
     <section class="game-panel is-active" data-panel="board">
       <div class="mono-board">
+        <div class="board-player-status"><span class="value" id="board-status-text">Ожидание хода</span></div>
         <div class="mono-board__main">
           <div class="board" id="board">
             <div class="corner space nw" id="corner-free-nw" data-pos="20"><div class="container"><div class="label">Бесплатная</div><div class="symbol parking">P</div><div class="label">парковка</div></div></div>
@@ -95,16 +97,23 @@ ob_start();
               <div class="deck-outline chest"></div>
               <div class="logo">Монополия</div>
               <div class="deck-outline chance"></div>
-              <div class="player-info">
-                <div class="current"><span class="value" id="board-status-text">Ожидание хода</span></div>
-              </div>
-              <div class="dice">
-                <div class="dice-group">
-                  <div class="die left" id="die-1" data-value="0"><div class="pip a"></div><div class="space"></div><div class="pip e"></div><div class="pip b"></div><div class="pip d"></div><div class="pip f"></div><div class="pip c"></div><div class="space"></div><div class="pip g"></div></div>
-                  <div class="die right" id="die-2" data-value="0"><div class="pip a"></div><div class="space"></div><div class="pip e"></div><div class="pip b"></div><div class="pip d"></div><div class="pip f"></div><div class="pip c"></div><div class="space"></div><div class="pip g"></div></div>
+              <div class="dice-arena" id="dice-arena">
+                <div class="dice-cube dice-one" id="dice1">
+                  <div class="side one"><div class="dot one-1"></div></div>
+                  <div class="side two"><div class="dot two-1"></div><div class="dot two-2"></div></div>
+                  <div class="side three"><div class="dot three-1"></div><div class="dot three-2"></div><div class="dot three-3"></div></div>
+                  <div class="side four"><div class="dot four-1"></div><div class="dot four-2"></div><div class="dot four-3"></div><div class="dot four-4"></div></div>
+                  <div class="side five"><div class="dot five-1"></div><div class="dot five-2"></div><div class="dot five-3"></div><div class="dot five-4"></div><div class="dot five-5"></div></div>
+                  <div class="side six"><div class="dot six-1"></div><div class="dot six-2"></div><div class="dot six-3"></div><div class="dot six-4"></div><div class="dot six-5"></div><div class="dot six-6"></div></div>
                 </div>
-                <div class="dice-status hidden">Выпало:</div>
-                <div class="dice-value hidden">0</div>
+                <div class="dice-cube dice-two" id="dice2">
+                  <div class="side one"><div class="dot one-1"></div></div>
+                  <div class="side two"><div class="dot two-1"></div><div class="dot two-2"></div></div>
+                  <div class="side three"><div class="dot three-1"></div><div class="dot three-2"></div><div class="dot three-3"></div></div>
+                  <div class="side four"><div class="dot four-1"></div><div class="dot four-2"></div><div class="dot four-3"></div><div class="dot four-4"></div></div>
+                  <div class="side five"><div class="dot five-1"></div><div class="dot five-2"></div><div class="dot five-3"></div><div class="dot five-4"></div><div class="dot five-5"></div></div>
+                  <div class="side six"><div class="dot six-1"></div><div class="dot six-2"></div><div class="dot six-3"></div><div class="dot six-4"></div><div class="dot six-5"></div><div class="dot six-6"></div></div>
+                </div>
               </div>
             </div>
             <div class="row vertical east">
@@ -135,45 +144,46 @@ ob_start();
             <div id="card-overlay" class="modal-overlay in-deck hide hidden"><div class="card-body"><div class="card-header"><h5 class="card-title"></h5></div><div class="card-content"></div><div class="card-footer"></div></div></div>
             <div id="space-overlay" class="modal-overlay hide hidden"></div>
           </div>
-        </div>
-        <aside class="mono-board__players tabletop">
-          <?php foreach ($players as $p): ?>
-            <div class="player-chip" data-player-id="<?= (int) $p['id'] ?>">
-              <strong><?= htmlspecialchars((string) $p['nickname_snapshot'], ENT_QUOTES, 'UTF-8') ?></strong>
-              <span>Баланс: <?= (int) $p['cash'] ?></span>
-              <span>Позиция: <?= (int) $p['position'] ?></span>
-              <div class="player-assets"></div>
+          <div class="board-bottom-row">
+            <div class="chat-box">
+              <div class="chat-log" id="chat-log">
+              <?php foreach ($chat as $m): ?>
+                <div class="chat-msg">
+                  <button type="button" class="chat-msg__author"><?= htmlspecialchars((string) ($m['from_name'] ?? 'Система'), ENT_QUOTES, 'UTF-8') ?></button>
+                  <span class="chat-msg__text"><?= htmlspecialchars((string) ($m['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                  <span class="chat-msg__time"><?= htmlspecialchars((string) ($m['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                </div>
+              <?php endforeach; ?>
+              </div>
+              <form id="chat-form" class="chat-form">
+                <input type="text" class="password-inline" name="message" maxlength="500" required placeholder="Сообщение в чат">
+                <button type="submit" class="btn btn-outline">Отправить</button>
+              </form>
             </div>
-          <?php endforeach; ?>
-          <div class="tabletop-card-closeup hidden" id="tabletop-card-closeup">
-            <div class="tabletop-card-closeup__head">
-              <strong id="tabletop-card-closeup-title">Карточка</strong>
-              <button type="button" class="tabletop-card-closeup__close" id="tabletop-card-closeup-close" aria-label="Закрыть">✕</button>
-            </div>
-            <div class="tabletop-card-closeup__body" id="tabletop-card-closeup-body"></div>
+            <aside class="mono-board__players tabletop">
+              <?php foreach ($players as $p): ?>
+                <div class="player-chip" data-player-id="<?= (int) $p['id'] ?>">
+                  <strong><?= htmlspecialchars((string) $p['nickname_snapshot'], ENT_QUOTES, 'UTF-8') ?></strong>
+                  <span>Баланс: <?= (int) $p['cash'] ?></span>
+                  <span>Позиция: <?= (int) $p['position'] ?></span>
+                  <div class="player-assets"></div>
+                </div>
+              <?php endforeach; ?>
+              <div class="tabletop-card-closeup hidden" id="tabletop-card-closeup">
+                <div class="tabletop-card-closeup__head">
+                  <strong id="tabletop-card-closeup-title">Карточка</strong>
+                  <button type="button" class="tabletop-card-closeup__close" id="tabletop-card-closeup-close" aria-label="Закрыть">✕</button>
+                </div>
+                <div class="tabletop-card-closeup__body" id="tabletop-card-closeup-body"></div>
+              </div>
+            </aside>
           </div>
-        </aside>
-      </div>
-      <div class="chat-box">
-        <div class="chat-log" id="chat-log">
-          <?php foreach ($chat as $m): ?>
-            <div class="chat-msg">
-              <button type="button" class="chat-msg__author"><?= htmlspecialchars((string) ($m['from_name'] ?? 'Система'), ENT_QUOTES, 'UTF-8') ?></button>
-              <span class="chat-msg__text"><?= htmlspecialchars((string) ($m['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
-              <span class="chat-msg__time"><?= htmlspecialchars((string) ($m['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
-            </div>
-          <?php endforeach; ?>
         </div>
-        <form id="chat-form" class="chat-form">
-          <input type="text" class="password-inline" name="message" maxlength="500" required placeholder="Сообщение в чат">
-          <button type="submit" class="btn btn-outline">Отправить</button>
-        </form>
       </div>
     </section>
     <section class="game-panel" data-panel="ledger">
       <div id="ledger-box" class="ledger-box" data-initial-events="<?= htmlspecialchars(json_encode($events, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') ?>"></div>
     </section>
-    <section class="game-panel" data-panel="timeline"><div id="timeline-box" class="timeline-box"></div></section>
     <section class="game-panel" data-panel="stats"><div id="stats-box">Статистика игроков обновляется из событий.</div></section>
     <section class="game-panel" data-panel="trade"><div id="trade-box">Модуль сделок: обмен деньгами и собственностью.</div></section>
     <section class="game-panel" data-panel="rules"><div id="rules-box">
