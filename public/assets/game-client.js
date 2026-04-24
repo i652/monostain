@@ -132,7 +132,7 @@
   let controlIndex = 0;
   const playerIdsInOrder = players.map((p) => Number(p.id || 0)).filter((v) => v > 0);
   const playerNameById = new Map(players.map((p) => [Number(p.id || 0), String(p.nickname_snapshot || "Игрок")]));
-  const boardMeta = {
+  const baseBoardMeta = {
     0: { name: "Старт", price: 0, rent: 0, group: null, type: "go", details: "Получите 200 при проходе." },
     1: { name: "Средиземноморский пр.", price: 60, rent: 2, group: 0 },
     2: { name: "Казна", price: 0, rent: 0, group: null, type: "chest", details: "Вытяните карту «Общественная казна» и выполните ее указание: перемещение, выплата, получение денег, тюрьма или ремонт собственности." },
@@ -174,6 +174,7 @@
     38: { name: "Налог на роскошь", price: 0, rent: 200, group: null, type: "tax", details: "Оплатите налог 200." },
     39: { name: "Бродвей", price: 400, rent: 50, group: 7 },
   };
+  let boardMeta = { ...baseBoardMeta };
   const groupBuildCost = { 0: 50, 1: 50, 2: 100, 3: 100, 4: 150, 5: 150, 6: 200, 7: 200 };
   const tokenColors = ["#e11d48", "#2563eb", "#f59e0b", "#16a34a", "#7c3aed", "#0ea5e9", "#ef4444", "#84cc16"];
   const playerColorById = new Map();
@@ -205,6 +206,66 @@
   let boardRotationDeg = 0;
   let liveAnimationEnabled = false;
   let buyoutInputVisible = false;
+  let lastBoardDecorSignature = "__init__";
+  const templateCoordsByPos = new Map();
+  const templateAdjByPos = new Map();
+
+  function buildBoardMetaFromTemplate(cells) {
+    boardMeta = { ...baseBoardMeta };
+    if (!Array.isArray(cells) || cells.length === 0) return;
+    cells.forEach((cell) => {
+      const pos = Number(cell?.position ?? -1);
+      if (pos < 0) return;
+      let extra = cell?.extra_json || {};
+      if (typeof extra === "string") {
+        try { extra = JSON.parse(extra); } catch (_) { extra = {}; }
+      }
+      const group = extra?.group ?? null;
+      const price = Number(cell?.buy_price || 0);
+      const inferredRent = price > 0 ? Math.max(2, Math.floor(price / 10)) : 0;
+      boardMeta[pos] = {
+        name: String(cell?.title || `#${pos}`),
+        price,
+        rent: inferredRent,
+        group,
+        type: String(cell?.cell_type || "property"),
+      };
+    });
+  }
+
+  function rebuildTemplateTopology(cells) {
+    templateCoordsByPos.clear();
+    templateAdjByPos.clear();
+    if (!Array.isArray(cells) || cells.length === 0) return;
+    cells.forEach((cell) => {
+      const pos = Number(cell?.position ?? -1);
+      if (pos < 0) return;
+      let extra = cell?.extra_json || {};
+      if (typeof extra === "string") {
+        try { extra = JSON.parse(extra); } catch (_) { extra = {}; }
+      }
+      const x = Number((extra && extra.x) ?? -1);
+      const y = Number((extra && extra.y) ?? -1);
+      if (x < 0 || y < 0) return;
+      templateCoordsByPos.set(pos, { x, y });
+    });
+    const entries = Array.from(templateCoordsByPos.entries());
+    for (let i = 0; i < entries.length; i += 1) {
+      const [posA, a] = entries[i];
+      if (!templateAdjByPos.has(posA)) templateAdjByPos.set(posA, new Set());
+      for (let j = i + 1; j < entries.length; j += 1) {
+        const [posB, b] = entries[j];
+        const dist = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        if (dist !== 1) continue;
+        if (!templateAdjByPos.has(posB)) templateAdjByPos.set(posB, new Set());
+        templateAdjByPos.get(posA).add(posB);
+        templateAdjByPos.get(posB).add(posA);
+      }
+    }
+  }
+
+  buildBoardMetaFromTemplate(boardCells);
+  rebuildTemplateTopology(boardCells);
   applyBoardTemplateLayout(boardCells, boardTemplateId);
   renderTokens();
   const rotateLeftBtn = document.querySelector(".board-rotate-left");
@@ -1164,29 +1225,45 @@
     // Keep classic Monopoly on proven static layout to avoid regressions.
     if (Number(templateId || 0) === 2) return;
     const byPos = new Map();
+    const sortedCells = [];
     cells.forEach((cell) => {
       const logicalPos = Number(cell.position ?? -1);
       if (logicalPos < 0) return;
       let extra = cell.extra_json;
       if (typeof extra === "string") {
-        try { extra = JSON.parse(extra); } catch (_) { extra = {}; }
+        try {
+          extra = JSON.parse(extra);
+        } catch (_) {
+          extra = {};
+        }
       }
       const x = Number((extra && extra.x) ?? -1);
       const y = Number((extra && extra.y) ?? -1);
       if (x < 0 || y < 0) return;
       const orientation = String((extra && extra.orientation) || "");
       byPos.set(logicalPos, { x, y, orientation });
+      sortedCells.push({ pos: logicalPos, x, y, orientation });
     });
     if (byPos.size === 0) return;
+    sortedCells.sort((a, b) => a.pos - b.pos);
     board.classList.add("board--template");
     const cellEls = Array.from(board.querySelectorAll("[data-pos]"));
     cellEls.forEach((el) => board.appendChild(el));
-    board.querySelectorAll(".row").forEach((el) => { el.style.display = "none"; });
-    board.querySelectorAll(".center .logo").forEach((el) => { el.style.display = "none"; });
-    cellEls.forEach((el) => {
-      const pos = Number(el.getAttribute("data-pos") || -1);
-      const c = byPos.get(pos);
-      if (!c) return;
+    board.querySelectorAll(".row").forEach((el) => {
+      el.style.display = "none";
+    });
+    board.querySelectorAll(".center .logo").forEach((el) => {
+      el.style.display = "none";
+    });
+    cellEls.forEach((el, idx) => {
+      const slot = sortedCells[idx];
+      if (!slot) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "";
+      el.setAttribute("data-pos", String(slot.pos));
+      const c = slot;
       el.style.position = "absolute";
       el.style.left = `calc(${c.x} * var(--cell))`;
       el.style.top = `calc(${c.y} * var(--cell))`;
@@ -1199,10 +1276,17 @@
         else if (c.y === 10) edge = "south";
         else if (c.x === 0) edge = "west";
         else if (c.x === 10) edge = "east";
-        else edge = c.y <= 5 ? "north" : "south";
+        else {
+          edge = c.y <= 5 ? "north" : "south";
+        }
       }
       el.dataset.edge = edge;
+      el.classList.remove("edge-north", "edge-south", "edge-west", "edge-east");
       el.classList.add("edge-" + edge);
+      if (el.classList.contains("corner")) {
+        const onOuterCorner = (c.x === 0 || c.x === 10) && (c.y === 0 || c.y === 10);
+        el.classList.toggle("corner--inner", !onOuterCorner);
+      }
     });
   }
 
@@ -1238,11 +1322,36 @@
       return;
     }
     const steps = [];
-    let p = fromPos;
-    while (p !== toPos) {
-      p = (p + 1) % 40;
-      steps.push(p);
-      if (steps.length > 80) break;
+    if (Number(boardTemplateId || 0) !== 2 && templateAdjByPos.size > 0) {
+      const prev = new Map();
+      const q = [fromPos];
+      prev.set(fromPos, -1);
+      while (q.length) {
+        const cur = q.shift();
+        if (cur === toPos) break;
+        const ns = Array.from(templateAdjByPos.get(cur) || []);
+        ns.forEach((n) => {
+          if (prev.has(n)) return;
+          prev.set(n, cur);
+          q.push(n);
+        });
+      }
+      if (prev.has(toPos)) {
+        let p = toPos;
+        while (p !== fromPos && p !== -1) {
+          steps.push(p);
+          p = Number(prev.get(p) ?? -1);
+        }
+        steps.reverse();
+      }
+    }
+    if (steps.length === 0) {
+      let p = fromPos;
+      while (p !== toPos) {
+        p = (p + 1) % 40;
+        steps.push(p);
+        if (steps.length > 80) break;
+      }
     }
     let i = 0;
     const tick = () => {
@@ -1492,11 +1601,21 @@
         chip.dataset.toggleInit = "1";
       }
     });
-    updateBoardPropertyDecorations();
+    const signature = propertyState
+      .map((ps) => `${Number(ps.cell_position || -1)}:${Number(ps.owner_player_id || 0)}:${Number(ps.houses || 0)}:${Boolean(ps.has_hotel) ? 1 : 0}:${Boolean(ps.mortgaged) ? 1 : 0}`)
+      .sort()
+      .join("|");
+    if (signature !== lastBoardDecorSignature) {
+      lastBoardDecorSignature = signature;
+      updateBoardPropertyDecorations();
+    }
     markActiveToken();
   }
 
   function updateBoardPropertyDecorations() {
+    const activePlayerId = Number(playerIdsInOrder[controlIndex] || selfPlayerId);
+    const quickHouseSet = getBuildablePositions(activePlayerId, "house");
+    const quickHotelSet = getBuildablePositions(activePlayerId, "hotel");
     document.querySelectorAll("#board .space.property").forEach((space) => {
       const old = space.querySelector(".build-icons");
       if (old) old.remove();
@@ -1513,14 +1632,14 @@
       const box = document.createElement("div");
       box.className = "build-icons";
       box.style.pointerEvents = "auto";
-      const canQuickBuildHouse = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
+      const canQuickBuildHouse = Number(ownerId) === activePlayerId
         && canAffordAnyBuild(ownerId, "house")
-        && getBuildablePositions(ownerId, "house").has(pos);
-      const canQuickBuildHotel = Number(ownerId) === Number(playerIdsInOrder[controlIndex] || selfPlayerId)
+        && quickHouseSet.has(pos);
+      const canQuickBuildHotel = Number(ownerId) === activePlayerId
         && !hasHotel
         && Number(houses) >= 4
         && canAffordAnyBuild(ownerId, "hotel")
-        && getBuildablePositions(ownerId, "hotel").has(pos);
+        && quickHotelSet.has(pos);
       if (!houses && !hasHotel && !canQuickBuildHouse) return;
       if (hasHotel) {
         const icon = document.createElement("span");
@@ -1996,16 +2115,18 @@
           return;
         }
         const actorPlayerId = playerIdsInOrder[controlIndex] || selfPlayerId;
+        const state = propertyState.find((x) => Number(x.cell_position || -1) === pos);
+        const ownerForBuild = Number(state?.owner_player_id || actorPlayerId);
         try {
           const ev = await postJson("/api/v1/game/" + gameId + "/commands", {
             action: "build",
             build_type: pendingBuildType,
             position: pos,
-            as_player_id: actorPlayerId,
+            as_player_id: ownerForBuild,
             client_msg_id: "build_" + pendingBuildType + "_" + Date.now(),
           });
           ingestServerEvent(ev);
-          setBoardStatus(`${playerNameById.get(actorPlayerId) || "Игрок"} построил ${pendingBuildType === "hotel" ? "отель" : "дом"} на позиции ${pos}`, 1400);
+          setBoardStatus(`${playerNameById.get(ownerForBuild) || "Игрок"} построил ${pendingBuildType === "hotel" ? "отель" : "дом"} на позиции ${pos}`, 1400);
           showNotify(pendingBuildType === "hotel" ? "Отель построен" : "Дом построен");
         } catch (err) {
           showPopup(toRuError(err.message || "Не удалось построить"));
@@ -2234,16 +2355,20 @@ function setDiceFace(dieEl, value) {
 }
 
 function animateDiceChaos(d1, d2) {
-  const arena = document.querySelector("#dice-arena");
+  const board = document.querySelector("#board");
   const dice = [document.querySelector("#dice1"), document.querySelector("#dice2")].filter(Boolean);
-  if (!arena || dice.length === 0) return;
-  const b = arena.getBoundingClientRect();
+  if (!board || dice.length === 0) return;
+  const b = board.getBoundingClientRect();
   const size = 72;
-  const minX = 0;
-  const minY = 0;
+  const pad = 2;
+  const minX = pad;
+  const minY = pad;
   const maxX = Math.max(minX, b.width - size);
   const maxY = Math.max(minY, b.height - size);
   dice.forEach((die, idx) => {
+    if (die.parentElement !== board) board.appendChild(die);
+    die.style.position = "absolute";
+    die.style.zIndex = "11";
     setDiceFace(die, idx === 0 ? d1 : d2);
     let vx = (Math.random() * 14) - 7;
     let vy = (Math.random() * 14) - 7;

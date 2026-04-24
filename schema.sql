@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS game_players (
   is_bot BOOLEAN NOT NULL DEFAULT FALSE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   cash INT NOT NULL DEFAULT 1500,
-  position SMALLINT NOT NULL DEFAULT 0 CHECK (position BETWEEN 0 AND 39),
+  position SMALLINT NOT NULL DEFAULT 0 CHECK (position BETWEEN 0 AND 120),
   in_jail BOOLEAN NOT NULL DEFAULT FALSE,
   jail_turns SMALLINT NOT NULL DEFAULT 0,
   bankrupt BOOLEAN NOT NULL DEFAULT FALSE,
@@ -232,11 +232,15 @@ CREATE TABLE IF NOT EXISTS game_board_cells (
 
 ALTER TABLE game_board_cells DROP CONSTRAINT IF EXISTS game_board_cells_position_check;
 ALTER TABLE game_board_cells ADD CONSTRAINT game_board_cells_position_check CHECK (position BETWEEN 0 AND 120);
+ALTER TABLE game_players DROP CONSTRAINT IF EXISTS game_players_position_check;
+ALTER TABLE game_players ADD CONSTRAINT game_players_position_check CHECK (position BETWEEN 0 AND 120);
+ALTER TABLE game_property_state DROP CONSTRAINT IF EXISTS game_property_state_cell_position_check;
+ALTER TABLE game_property_state ADD CONSTRAINT game_property_state_cell_position_check CHECK (cell_position BETWEEN 0 AND 120);
 
 CREATE TABLE IF NOT EXISTS game_property_state (
   id BIGSERIAL PRIMARY KEY,
   game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-  cell_position SMALLINT NOT NULL CHECK (cell_position BETWEEN 0 AND 39),
+  cell_position SMALLINT NOT NULL CHECK (cell_position BETWEEN 0 AND 120),
   owner_player_id BIGINT REFERENCES game_players(id) ON DELETE SET NULL,
   houses SMALLINT NOT NULL DEFAULT 0 CHECK (houses BETWEEN 0 AND 4),
   has_hotel BOOLEAN NOT NULL DEFAULT FALSE,

@@ -30,11 +30,21 @@ ob_start();
     <form method="post" action="<?= $isNew ? '/panel/game-boards/new' : ('/panel/game-boards/' . $tplId . '/edit') ?>" id="board-editor-form" class="quick-form panel-form">
       <label for="board_name">Название карты</label>
       <input id="board_name" type="text" name="name" maxlength="120" required value="<?= htmlspecialchars((string) ($boardTemplate['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-      <label class="check-row" style="display:flex;align-items:center;gap:8px">
+      <label class="check-row board-publish-row">
         <input type="checkbox" name="is_published" value="1" <?= !empty($boardTemplate['is_published']) ? 'checked' : '' ?>>
-        Опубликовать
+        <span>Опубликовать</span>
       </label>
       <input type="hidden" name="cells_json" id="cells-json-input" value='<?= htmlspecialchars((string) $cellsJson, ENT_QUOTES, 'UTF-8') ?>'>
+      <div class="editor-wizard" id="editor-wizard">
+        <div class="editor-wizard__title">Пошаговый режим</div>
+        <div class="editor-wizard__steps">
+          <span class="wiz-step" data-step="1">1) Выберите клетку</span>
+          <span class="wiz-step" data-step="2">2) Выберите карточку</span>
+          <span class="wiz-step" data-step="3">3) Выберите ориентацию</span>
+          <span class="wiz-step" data-step="4">4) Готово</span>
+        </div>
+        <p class="editor-wizard__hint" id="editor-wizard-hint">Нажмите на «+» или на уже добавленную карточку.</p>
+      </div>
       <div class="board-editor-layout">
         <div class="board-grid-wrap">
           <div class="board-grid-11" id="board-grid-11"></div>
@@ -60,8 +70,16 @@ ob_start();
 </section>
 <style>
 .board-editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+.board-publish-row{display:inline-flex !important;align-items:center;gap:8px;white-space:nowrap}
+.board-publish-row span{display:inline !important}
+.editor-wizard{border:1px solid var(--line-mid);border-radius:10px;padding:10px 12px;background:var(--color_surface)}
+.editor-wizard__title{font-weight:800;margin-bottom:6px}
+.editor-wizard__steps{display:flex;gap:8px;flex-wrap:wrap}
+.wiz-step{padding:4px 8px;border-radius:999px;border:1px solid var(--line-mid);font-size:.9rem}
+.wiz-step.is-active{background:#dff3e3;border-color:#2f9e44;font-weight:700}
+.editor-wizard__hint{margin:8px 0 0}
 .board-grid-wrap{overflow:auto;border:1px solid var(--line-mid);border-radius:12px;background:transparent;padding:8px}
-.board-grid-11{display:grid;grid-template-columns:repeat(11,92px);grid-template-rows:repeat(11,92px);gap:8px;justify-content:start}
+.board-grid-11{display:grid;grid-template-columns:repeat(11,84px);grid-template-rows:repeat(11,84px);gap:7px;justify-content:start}
 .board-grid-cell{border:1px dashed #1f2937;border-radius:8px;background:#fff;position:relative;padding:4px;display:flex;align-items:center;justify-content:center}
 .board-grid-cell--active{outline:3px solid #2f9e44;outline-offset:-2px}
 .board-grid-cell--filled{background:#eef9ee}
@@ -74,7 +92,9 @@ ob_start();
 .board-picker{border:1px solid var(--line-mid);border-radius:12px;background:#fff;padding:10px}
 .board-picker h3{margin:0 0 8px}
 .board-picker__list{display:flex;flex-wrap:wrap;gap:6px;max-height:560px;overflow:auto}
+.board-picker__list.is-disabled{opacity:.35;pointer-events:none}
 .cell-orient-box{margin-top:12px;border-top:1px solid var(--line-mid);padding-top:10px}
+.cell-orient-box.is-disabled{opacity:.45;pointer-events:none}
 .cell-orient-box h4{margin:0 0 8px;font-size:1rem}
 .cell-orient-buttons{display:grid;gap:6px}
 .cell-orient-btn{appearance:none;border:1px solid #090a0e;background:#fff;border-radius:8px;padding:10px 8px;font-size:1rem;font-weight:700;cursor:pointer;text-align:left}
@@ -92,10 +112,13 @@ ob_start();
   const grid = document.querySelector("#board-grid-11");
   const picker = document.querySelector("#board-picker-list");
   const orientBox = document.querySelector("#cell-orient-box");
-  if (!input || !grid || !picker || !orientBox) return;
+  const wizard = document.querySelector("#editor-wizard");
+  const wizardHint = document.querySelector("#editor-wizard-hint");
+  if (!input || !grid || !picker || !orientBox || !wizard || !wizardHint) return;
   let cells = [];
   try { cells = JSON.parse(input.value || "[]"); } catch (_) { cells = []; }
   const byPos = new Map();
+  const reusablePositions = [];
   cells.forEach((c) => {
     let extra = c.extra_json || {};
     if (typeof extra === "string") {
@@ -104,12 +127,45 @@ ob_start();
     const x = Number((extra && extra.x) ?? -1);
     const y = Number((extra && extra.y) ?? -1);
     const slot = (x >= 0 && y >= 0) ? (y * 11 + x) : Number(c.position || -1);
-    byPos.set(slot, c);
+    byPos.set(slot, {
+      position: Number(c.position || 0),
+      cell_type: String(c.cell_type || "property"),
+      title: String(c.title || ""),
+      buy_price: Number(c.buy_price || 0),
+      rent_rules: {},
+      extra_json: { x, y, group: extra?.group ?? null, orientation: String(extra?.orientation || "") }
+    });
   });
   let activePos = -1;
 
   const colorByGroup = {0:"#955436",1:"#aae0fa",2:"#d93a96",3:"#f7941d",4:"#ed1b24",5:"#fef200",6:"#1fb25a",7:"#0072bb"};
   const unlimitedTypes = new Set(["chance","chest","free","tax"]);
+  const nextPosition = () => {
+    if (reusablePositions.length > 0) return Number(reusablePositions.shift() || 0);
+    let maxPos = -1;
+    byPos.forEach((cell) => { maxPos = Math.max(maxPos, Number(cell.position || -1)); });
+    return maxPos + 1;
+  };
+
+  const inferOrientation = (slot) => {
+    const x = slot % 11;
+    const y = Math.floor(slot / 11);
+    const hasN = byPos.has(slot - 11);
+    const hasS = byPos.has(slot + 11);
+    const hasW = (x > 0) && byPos.has(slot - 1);
+    const hasE = (x < 10) && byPos.has(slot + 1);
+    if (hasS && !hasN) return "south";
+    if (hasN && !hasS) return "north";
+    if (hasW && !hasE) return "west";
+    if (hasE && !hasW) return "east";
+    if (hasW && hasE) return x <= 5 ? "east" : "west";
+    if (hasN && hasS) return y <= 5 ? "north" : "south";
+    if (y === 0) return "north";
+    if (y === 10) return "south";
+    if (x === 0) return "west";
+    if (x === 10) return "east";
+    return y <= 5 ? "north" : "south";
+  };
 
   const countUsage = () => {
     const used = new Map();
@@ -138,12 +194,12 @@ ob_start();
           const x = activePos % 11;
           const y = Math.floor(activePos / 11);
           byPos.set(activePos, {
-            position: activePos,
+            position: nextPosition(),
             cell_type: String(card.cell_type || "property"),
             title: String(card.title || ""),
             buy_price: Number(card.buy_price || 0),
             rent_rules: {},
-            extra_json: { x, y, group: card.group ?? null }
+            extra_json: { x, y, group: card.group ?? null, orientation: inferOrientation(activePos) }
           });
           sync();
         });
@@ -166,6 +222,30 @@ ob_start();
     }
   };
 
+  const updateWizard = () => {
+    const selected = byPos.get(activePos);
+    const hasCell = Boolean(selected);
+    const hasOrientation = Boolean(selected?.extra_json?.orientation);
+    let step = 1;
+    let hint = "Нажмите на «+» или на уже добавленную карточку.";
+    if (activePos >= 0 && !hasCell) {
+      step = 2;
+      hint = "Теперь выберите карточку справа.";
+    } else if (hasCell && !hasOrientation) {
+      step = 3;
+      hint = "Задайте ориентацию кнопками: верх / низ / лево / право.";
+    } else if (hasCell && hasOrientation) {
+      step = 4;
+      hint = "Готово. Можно сохранить карту или выбрать следующую клетку.";
+    }
+    wizard.querySelectorAll(".wiz-step").forEach((el) => {
+      el.classList.toggle("is-active", Number(el.dataset.step || 0) === step);
+    });
+    wizardHint.textContent = hint;
+    picker.classList.toggle("is-disabled", activePos < 0);
+    orientBox.classList.toggle("is-disabled", !hasCell);
+  };
+
   const renderGrid = () => {
     grid.innerHTML = "";
     for (let pos = 0; pos < 121; pos += 1) {
@@ -179,7 +259,8 @@ ob_start();
         plus.type = "button";
         plus.className = "board-grid-plus";
         plus.textContent = "+";
-        plus.addEventListener("click", () => { activePos = pos; updateOrientationPanel(); renderGrid(); });
+        plus.addEventListener("click", () => { activePos = pos; updateOrientationPanel(); updateWizard(); renderGrid(); });
+        cell.addEventListener("click", () => { activePos = pos; updateOrientationPanel(); updateWizard(); renderGrid(); });
         cell.appendChild(plus);
       } else {
         const group = item?.extra_json?.group;
@@ -188,11 +269,18 @@ ob_start();
         card.className = "board-grid-card";
         card.innerHTML = `<span class="board-grid-card__bar" style="background:${barColor}"></span><span class="board-grid-card__name">${String(item.title || "")}</span><button type="button" class="board-grid-card__remove">Удалить</button>`;
         const rm = card.querySelector(".board-grid-card__remove");
-        if (rm) rm.addEventListener("click", () => { byPos.delete(pos); if (activePos === pos) activePos = -1; sync(); });
+        if (rm) rm.addEventListener("click", () => {
+          const removed = byPos.get(pos);
+          if (removed) reusablePositions.push(Number(removed.position || 0));
+          byPos.delete(pos);
+          if (activePos === pos) activePos = -1;
+          sync();
+        });
         card.addEventListener("click", (evt) => {
           if (evt.target.closest(".board-grid-card__remove")) return;
           activePos = pos;
           updateOrientationPanel();
+          updateWizard();
           renderGrid();
         });
         cell.appendChild(card);
@@ -209,7 +297,7 @@ ob_start();
       const x = k % 11;
       const y = Math.floor(k / 11);
       out.push({
-        position: k,
+        position: Number(v.position || 0),
         cell_type: String(v.cell_type || "property"),
         title: String(v.title || ""),
         buy_price: Number(v.buy_price || 0),
@@ -221,6 +309,7 @@ ob_start();
     renderGrid();
     renderPicker();
     updateOrientationPanel();
+    updateWizard();
   };
   orientBox.querySelectorAll(".cell-orient-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

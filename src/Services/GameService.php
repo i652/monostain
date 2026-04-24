@@ -329,8 +329,9 @@ final class GameService
                     $payload['jail_freed_by_doubles'] = true;
                 }
                 $move = $d1 + $d2;
-                $newPos = ($oldPos + $move) % 40;
-                if (($oldPos + $move) >= 40) {
+                $advance = $this->advancePositionByRoute($gameId, $oldPos, $move);
+                $newPos = (int) ($advance['position'] ?? $oldPos);
+                if (!empty($advance['passed_start'])) {
                     $cash += 200;
                 }
                 $jailNow = false;
@@ -405,7 +406,7 @@ final class GameService
                 break;
             case 'buy':
                 $position = (int) $player['position'];
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('На этой клетке нельзя купить собственность');
                 }
@@ -431,7 +432,7 @@ final class GameService
                 break;
             case 'pay_rent':
                 $position = (int) $player['position'];
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('На этой клетке нет ренты');
                 }
@@ -465,7 +466,7 @@ final class GameService
                 break;
             case 'buyout':
                 $position = (int) $player['position'];
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('Эту клетку нельзя выкупить');
                 }
@@ -519,7 +520,7 @@ final class GameService
             case 'build':
                 $position = (int) ($data['position'] ?? $player['position']);
                 $buildType = (string) ($data['build_type'] ?? 'house');
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (($space['type'] ?? '') !== 'property') {
                     throw new \InvalidArgumentException('Строительство доступно только на улицах');
                 }
@@ -558,7 +559,7 @@ final class GameService
                 break;
             case 'sell_building':
                 $position = (int) ($data['position'] ?? $player['position']);
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (($space['type'] ?? '') !== 'property') {
                     throw new \InvalidArgumentException('Продажа построек доступна только на улицах');
                 }
@@ -588,7 +589,7 @@ final class GameService
                 break;
             case 'sell':
                 $position = (int) $player['position'];
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array($space['type'], ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('На этой клетке нечего продавать');
                 }
@@ -656,14 +657,14 @@ final class GameService
                     if ((int) ($state['owner_player_id'] ?? 0) !== (int) $player['id']) {
                         throw new \InvalidArgumentException('В списке обмена есть чужая карточка');
                     }
-                    $offerValue += $this->propertyValue($pos, $state);
+                    $offerValue += $this->propertyValue($gameId, $pos, $state);
                 }
                 foreach ($requestPositions as $pos) {
                     $state = $this->games->findPropertyState($gameId, $pos);
                     if ((int) ($state['owner_player_id'] ?? 0) !== $targetPlayerId) {
                         throw new \InvalidArgumentException('Запрошена карточка, не принадлежащая выбранному игроку');
                     }
-                    $requestValue += $this->propertyValue($pos, $state);
+                    $requestValue += $this->propertyValue($gameId, $pos, $state);
                 }
                 $totalOfferValue = $offerValue + $cashOffer;
                 if ($totalOfferValue < $requestValue) {
@@ -706,7 +707,7 @@ final class GameService
                 break;
             case 'mortgage':
                 $position = (int) ($data['position'] ?? $player['position']);
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array(($space['type'] ?? ''), ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('Эту клетку нельзя заложить');
                 }
@@ -717,7 +718,7 @@ final class GameService
                 if ($this->normalizeBool($prop['mortgaged'] ?? false)) {
                     throw new \InvalidArgumentException('Клетка уже в залоге');
                 }
-                $credit = (int) floor($this->propertyValue($position, $prop) / 2);
+                $credit = (int) floor($this->propertyValue($gameId, $position, $prop) / 2);
                 $cash = (int) $player['cash'] + $credit;
                 $this->games->updatePropertyMortgage($gameId, $position, true);
                 $this->games->updatePlayerState((int) $player['id'], $cash, (int) $player['position'], $this->normalizeBool($player['in_jail'] ?? false), (int) $player['jail_turns']);
@@ -725,7 +726,7 @@ final class GameService
                 break;
             case 'redeem_mortgage':
                 $position = (int) ($data['position'] ?? $player['position']);
-                $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+                $space = $this->spaceByPosition($gameId, $position);
                 if (!in_array(($space['type'] ?? ''), ['property', 'railroad', 'utility'], true)) {
                     throw new \InvalidArgumentException('Эту клетку нельзя выкупить из залога');
                 }
@@ -856,8 +857,13 @@ final class GameService
                 $decoded = json_decode($extra, true);
                 $extra = is_array($decoded) ? $decoded : [];
             }
+            $positionRaw = (int) ($row['position'] ?? -1);
             $x = (int) (($row['x'] ?? $extra['x'] ?? -1));
             $y = (int) (($row['y'] ?? $extra['y'] ?? -1));
+            if (($x < 0 || $x > 10 || $y < 0 || $y > 10) && $positionRaw >= 0 && $positionRaw <= 120) {
+                $x = $positionRaw % 11;
+                $y = intdiv($positionRaw, 11);
+            }
             if ($x < 0 || $x > 10 || $y < 0 || $y > 10) continue;
             $cellType = trim((string) ($row['cell_type'] ?? 'property'));
             $title = trim((string) ($row['title'] ?? ''));
@@ -867,7 +873,7 @@ final class GameService
             if (!in_array($orientation, ['north', 'south', 'west', 'east'], true)) {
                 $orientation = '';
             }
-            $position = ($y * 11) + $x;
+            $position = $positionRaw >= 0 && $positionRaw <= 120 ? $positionRaw : (($y * 11) + $x);
             $cells[] = [
                 'position' => $position,
                 'cell_type' => $cellType,
@@ -905,6 +911,13 @@ final class GameService
         foreach ($cells as $cell) {
             $x = (int) (($cell['extra_json']['x'] ?? -1));
             $y = (int) (($cell['extra_json']['y'] ?? -1));
+            if (($x < 0 || $y < 0) && isset($cell['position'])) {
+                $pos = (int) $cell['position'];
+                if ($pos >= 0 && $pos <= 120) {
+                    $x = $pos % 11;
+                    $y = intdiv($pos, 11);
+                }
+            }
             $points["{$x}:{$y}"] = true;
         }
         $neighbors = [];
@@ -1056,7 +1069,7 @@ final class GameService
         if ($depth > 3) {
             return ['position' => $position, 'cash' => $cash, 'in_jail' => false, 'jail_turns' => 0, 'payload' => []];
         }
-        $space = self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+        $space = $this->spaceByPosition($gameId, $position);
         $payload = ['space_type' => $space['type'], 'space_name' => $space['name']];
         $inJail = false;
         $jailTurns = 0;
@@ -1170,7 +1183,15 @@ final class GameService
             $payload['moved_by_card'] = true;
         } elseif ($type === 'move_by') {
             $delta = (int) ($drawn['delta'] ?? 0);
-            $position = ($position + $delta + 40) % 40;
+            $route = $this->boardRoutePositions($gameId);
+            $count = max(1, count($route));
+            $idx = array_search($position, $route, true);
+            $idx = $idx === false ? 0 : (int) $idx;
+            $nextIdx = ($idx + $delta) % $count;
+            if ($nextIdx < 0) {
+                $nextIdx += $count;
+            }
+            $position = (int) ($route[$nextIdx] ?? $position);
             $payload['moved_by_card'] = true;
         } elseif ($type === 'nearest_railroad') {
             $targets = [5, 15, 25, 35];
@@ -1245,17 +1266,101 @@ final class GameService
         return $base;
     }
 
-    private function ownsWholeGroup(string $gameId, int $playerId, int $groupId): bool
+    /** @return array<int> */
+    private function boardRoutePositions(string $gameId): array
     {
-        if ($groupId < 0) {
-            return false;
+        $game = $this->games->findGameById($gameId);
+        $templateId = (int) ($game['board_template_id'] ?? 0);
+        if ($templateId <= 0) {
+            return array_keys(self::BOARD);
         }
-        $groupPositions = [];
-        foreach (self::BOARD as $pos => $space) {
-            if (($space['type'] ?? '') === 'property' && (int) ($space['group'] ?? -1) === $groupId) {
-                $groupPositions[] = $pos;
+        $cells = $this->games->listBoardCells($templateId);
+        if ($cells === []) {
+            return array_keys(self::BOARD);
+        }
+        $positions = array_values(array_unique(array_map(static fn(array $c): int => (int) ($c['position'] ?? -1), $cells)));
+        $positions = array_values(array_filter($positions, static fn(int $p): bool => $p >= 0 && $p <= 120));
+        sort($positions);
+        return $positions === [] ? array_keys(self::BOARD) : $positions;
+    }
+
+    /** @return array{position:int,passed_start:bool} */
+    private function advancePositionByRoute(string $gameId, int $fromPos, int $steps): array
+    {
+        $route = $this->boardRoutePositions($gameId);
+        $count = count($route);
+        if ($count === 0) {
+            return ['position' => $fromPos, 'passed_start' => false];
+        }
+        $fromIdx = array_search($fromPos, $route, true);
+        if ($fromIdx === false) {
+            $fromIdx = 0;
+        }
+        $toIdxRaw = $fromIdx + $steps;
+        $toIdx = $toIdxRaw % $count;
+        return [
+            'position' => $route[$toIdx],
+            'passed_start' => $toIdxRaw >= $count,
+        ];
+    }
+
+    private function spaceByPosition(string $gameId, int $position): array
+    {
+        $game = $this->games->findGameById($gameId);
+        $templateId = (int) ($game['board_template_id'] ?? 0);
+        if ($templateId > 0) {
+            $cells = $this->games->listBoardCells($templateId);
+            foreach ($cells as $cell) {
+                if ((int) ($cell['position'] ?? -1) !== $position) {
+                    continue;
+                }
+                $extra = $cell['extra_json'] ?? [];
+                if (is_string($extra)) {
+                    $decoded = json_decode($extra, true);
+                    $extra = is_array($decoded) ? $decoded : [];
+                }
+                $type = (string) ($cell['cell_type'] ?? 'free');
+                $price = (int) ($cell['buy_price'] ?? 0);
+                $group = isset($extra['group']) ? (int) $extra['group'] : null;
+                $buildingCostByGroup = [0 => 50, 1 => 50, 2 => 100, 3 => 100, 4 => 150, 5 => 150, 6 => 200, 7 => 200];
+                $buildingCost = $group !== null ? (int) ($buildingCostByGroup[$group] ?? 100) : 0;
+                $rent = $price > 0 ? max(2, (int) floor($price / 10)) : 0;
+                if (in_array($type, ['tax', 'luxury'], true) && $rent <= 0) {
+                    $rent = $price > 0 ? $price : 100;
+                }
+                return [
+                    'type' => $type,
+                    'name' => (string) ($cell['title'] ?? ('#' . $position)),
+                    'price' => $price,
+                    'rent' => $rent,
+                    'tax' => $rent,
+                    'group' => $group,
+                    'building_cost' => $buildingCost,
+                ];
             }
         }
+        return self::BOARD[$position] ?? ['type' => 'free', 'name' => ''];
+    }
+
+    /** @return int[] */
+    private function groupPositions(string $gameId, int $groupId): array
+    {
+        if ($groupId < 0) {
+            return [];
+        }
+        $positions = [];
+        foreach ($this->boardRoutePositions($gameId) as $pos) {
+            $space = $this->spaceByPosition($gameId, $pos);
+            if (($space['type'] ?? '') === 'property' && (int) ($space['group'] ?? -1) === $groupId) {
+                $positions[] = $pos;
+            }
+        }
+        return $positions;
+    }
+
+    private function ownsWholeGroup(string $gameId, int $playerId, int $groupId): bool
+    {
+        $groupPositions = $this->groupPositions($gameId, $groupId);
         if ($groupPositions === []) {
             return false;
         }
@@ -1268,9 +1373,9 @@ final class GameService
         return true;
     }
 
-    private function propertyValue(int $position, ?array $state): int
+    private function propertyValue(string $gameId, int $position, ?array $state): int
     {
-        $space = self::BOARD[$position] ?? null;
+        $space = $this->spaceByPosition($gameId, $position);
         if ($space === null) {
             return 0;
         }
@@ -1300,7 +1405,7 @@ final class GameService
 
     private function redeemMortgageCost(string $gameId, int $ownerPlayerId, int $position, ?array $prop): int
     {
-        $baseCost = (int) floor($this->propertyValue($position, $prop) / 2);
+        $baseCost = (int) floor($this->propertyValue($gameId, $position, $prop) / 2);
         $events = $this->games->listEventsSince($gameId, 0, 1_000_000);
         $mortgageSeq = 0;
         foreach ($events as $ev) {
@@ -1342,10 +1447,24 @@ final class GameService
             }
             $from = (int) ($payload['from_position'] ?? -1);
             $to = (int) ($payload['position'] ?? -1);
-            if ($from >= 0 && $to >= 0 && $to < $from) {
+            if ($this->didPassStartByRoute($gameId, $from, $to)) {
                 $passes++;
             }
         }
         return $baseCost + ($passes * 200);
+    }
+
+    private function didPassStartByRoute(string $gameId, int $from, int $to): bool
+    {
+        if ($from < 0 || $to < 0) {
+            return false;
+        }
+        $route = $this->boardRoutePositions($gameId);
+        $fromIdx = array_search($from, $route, true);
+        $toIdx = array_search($to, $route, true);
+        if ($fromIdx === false || $toIdx === false) {
+            return $to < $from;
+        }
+        return (int) $toIdx < (int) $fromIdx;
     }
 }
